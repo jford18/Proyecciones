@@ -6,11 +6,15 @@
   <form method="post" action="?r=import-gastos" enctype="multipart/form-data" class="row g-3">
     <div class="col-md-4">
       <label class="form-label">Proyecto</label>
-      <select class="form-select" name="proyecto_id" required>
-        <?php foreach ($projectOptions as $projectId): ?>
-          <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>>Proyecto <?= $projectId ?></option>
+      <select class="form-select" name="proyecto_id" required <?= $hasProjects ? '' : 'disabled' ?>>
+        <?php foreach ($projectOptions as $project): ?>
+          <?php $projectId = (int) $project['ID']; ?>
+          <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>><?= htmlspecialchars((string) $project['NOMBRE']) ?> (ID: <?= $projectId ?>)</option>
         <?php endforeach; ?>
       </select>
+      <?php if (!$hasProjects): ?>
+        <div class="form-text text-danger">No existen proyectos. Cree uno en Configuración.</div>
+      <?php endif; ?>
     </div>
     <div class="col-md-8">
       <label class="form-label">Archivo Excel</label>
@@ -18,7 +22,7 @@
       <div class="form-text">Máximo 10 MB. Se validará extensión, MIME y hoja esperada.</div>
     </div>
     <div class="col-12">
-      <button class="btn btn-primary" type="submit">Importar ahora</button>
+      <button class="btn btn-primary" type="submit" <?= $hasProjects ? '' : 'disabled' ?>>Importar ahora</button>
     </div>
   </form>
 </div></div>

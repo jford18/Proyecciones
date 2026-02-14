@@ -1,7 +1,7 @@
 <?php $lastImport = $stats['lastImport'] ?? null; $counts = $stats['counts'] ?? ['today' => 0, 'total' => 0]; ?>
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item active">Dashboard</li></ol></nav>
 <div class="row g-3">
-  <div class="col-md-4"><div class="card shadow-sm"><div class="card-body"><h6>Proyecto activo</h6><div class="display-6"><?= $activeProjectId ?></div></div></div></div>
+  <div class="col-md-4"><div class="card shadow-sm"><div class="card-body"><h6>Proyecto activo</h6><div class="display-6"><?= $activeProject ? htmlspecialchars((string) $activeProject['NOMBRE']) : 'N/D' ?></div><div class="text-muted">ID: <?= $activeProjectId ?></div></div></div></div>
   <div class="col-md-4"><div class="card shadow-sm"><div class="card-body"><h6>Anexos hoy</h6><div class="display-6"><?= (int) $counts['today'] ?></div></div></div></div>
   <div class="col-md-4"><div class="card shadow-sm"><div class="card-body"><h6>Anexos total</h6><div class="display-6"><?= (int) $counts['total'] ?></div></div></div></div>
 </div>

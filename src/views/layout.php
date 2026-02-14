@@ -64,11 +64,15 @@ $sections = [
         <input type="hidden" name="back_route" value="<?= htmlspecialchars((string) $route) ?>">
         <label class="small text-muted">Proyecto activo</label>
         <select class="form-select form-select-sm" name="project_id" onchange="this.form.submit()">
-          <?php foreach ($projectOptions as $projectId): ?>
-            <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>>Proyecto <?= $projectId ?></option>
+          <?php foreach ($projectOptions as $project): ?>
+            <?php $projectId = (int) $project['ID']; ?>
+            <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>><?= htmlspecialchars((string) $project['NOMBRE']) ?> (ID: <?= $projectId ?>)</option>
           <?php endforeach; ?>
         </select>
       </form>
+      <?php if ($activeProject): ?>
+        <span class="badge text-bg-light">Proyecto: <?= htmlspecialchars((string) $activeProject['NOMBRE']) ?> (ID: <?= (int) $activeProject['ID'] ?>)</span>
+      <?php endif; ?>
     </header>
 
     <div class="container-fluid p-3">
