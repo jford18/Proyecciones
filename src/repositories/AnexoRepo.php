@@ -39,7 +39,7 @@ class AnexoRepo
         return $inserted;
     }
 
-    public function listAnexos(array $filters): array
+    public function listAnexos(array $filters, int $limit = 50, int $offset = 0): array
     {
         $sql = 'SELECT ID, TIPO_ANEXO, TIPO, MES, PERIODO, CODIGO, CONCEPTO, DESCRIPCION, VALOR, ORIGEN_HOJA, ORIGEN_FILA
                 FROM ANEXO_DETALLE WHERE 1=1';
@@ -62,12 +62,59 @@ class AnexoRepo
             $params['mes'] = (int) $filters['mes'];
         }
 
-        $sql .= ' ORDER BY ID DESC LIMIT 500';
+        $sql .= ' ORDER BY ID DESC LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    public function countAnexos(array $filters): int
+    {
+        $sql = 'SELECT COUNT(*) AS total FROM ANEXO_DETALLE WHERE 1=1';
+        $params = [];
+
+        if (!empty($filters['proyectoId'])) {
+            $sql .= ' AND PROYECTO_ID = :proyecto_id';
+            $params['proyecto_id'] = (int) $filters['proyectoId'];
+        }
+        if (!empty($filters['tipoAnexo'])) {
+            $sql .= ' AND TIPO_ANEXO = :tipo_anexo';
+            $params['tipo_anexo'] = $filters['tipoAnexo'];
+        }
+        if (!empty($filters['tipo'])) {
+            $sql .= ' AND TIPO = :tipo';
+            $params['tipo'] = $filters['tipo'];
+        }
+        if (!empty($filters['mes'])) {
+            $sql .= ' AND MES = :mes';
+            $params['mes'] = (int) $filters['mes'];
+        }
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function countByProject(int $projectId): array
+    {
+        $stmtTotal = $this->pdo->prepare('SELECT COUNT(*) FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id');
+        $stmtTotal->execute(['project_id' => $projectId]);
+
+        $stmtToday = $this->pdo->prepare('SELECT COUNT(*) FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id AND DATE(FECHA) = CURDATE()');
+        $stmtToday->execute(['project_id' => $projectId]);
+
+        return [
+            'today' => (int) $stmtToday->fetchColumn(),
+            'total' => (int) $stmtTotal->fetchColumn(),
+        ];
     }
 
     public function updateFlujoLineaId(int $anexoId, ?int $flujoLineaId): void
