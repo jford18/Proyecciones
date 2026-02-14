@@ -23,4 +23,13 @@ class ImportLogRepo
             'mensaje' => $mensaje,
         ]);
     }
+
+    public function latest(int $proyectoId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT ID, PROYECTO_ID, ARCHIVO, HOJA, REGISTROS_INSERTADOS, MENSAJE, CREADO_EN FROM ANEXO_IMPORT_LOG WHERE PROYECTO_ID = :proyecto_id ORDER BY ID DESC LIMIT 1');
+        $stmt->execute(['proyecto_id' => $proyectoId]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
 }
