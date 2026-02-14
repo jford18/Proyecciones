@@ -101,6 +101,7 @@ class ExcelAnexoImportService
 
         $excludedHeaders = ['número', 'numero', 'cedula', 'cédula', 'empleado', 'departamento', 'cargo', 'centro de costo', 'fecha registro'];
         $totales = [];
+        $warnings = 0;
 
         for ($col = 1; $col <= $highestCol; $col++) {
             $header = trim((string) $sheet->getCell([$col, 4])->getFormattedValue());
@@ -118,6 +119,8 @@ class ExcelAnexoImportService
             }
             if ($sum != 0.0) {
                 $totales[$header] = $sum;
+            } else {
+                $warnings++;
             }
         }
 
@@ -141,7 +144,7 @@ class ExcelAnexoImportService
             ];
         }
 
-        return ['sheet' => 'NOMINA', 'rows' => $rows];
+        return ['sheet' => 'NOMINA', 'rows' => $rows, 'warnings' => $warnings];
     }
 
     private function detectMonthColumns(Worksheet $sheet, int $headerRow, int $fromCol, int $toCol): array

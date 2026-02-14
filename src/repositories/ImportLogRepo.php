@@ -32,4 +32,14 @@ class ImportLogRepo
 
         return $row ?: null;
     }
+
+    public function listRecent(int $proyectoId, int $limit = 50): array
+    {
+        $stmt = $this->pdo->prepare('SELECT ID, PROYECTO_ID, ARCHIVO, HOJA, REGISTROS_INSERTADOS, MENSAJE, CREADO_EN FROM ANEXO_IMPORT_LOG WHERE PROYECTO_ID = :proyecto_id ORDER BY ID DESC LIMIT :limite');
+        $stmt->bindValue(':proyecto_id', $proyectoId, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', max(1, $limit), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll() ?: [];
+    }
 }

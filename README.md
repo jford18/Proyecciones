@@ -1,6 +1,6 @@
 # Importador de Anexos (PHP puro + MySQL)
 
-Aplicación sin framework para importar hojas Excel de **GASTOS** y **NOMINA** hacia `ANEXO_DETALLE`, ahora con navegación por módulos y archivo/proyecto activo en sesión.
+Aplicación sin framework para importar hojas Excel de **GASTOS** y **NOMINA** hacia `ANEXO_DETALLE`, con carga de archivo embebida en cada pantalla de importación.
 
 ## Requisitos
 - PHP 8.1+
@@ -15,23 +15,21 @@ Aplicación sin framework para importar hojas Excel de **GASTOS** y **NOMINA** h
 
 ## Navegación principal
 - `/?r=dashboard`
-- `/?r=upload`
-- `/?r=files`
 - `/?r=import-gastos`
 - `/?r=import-nomina`
 - `/?r=anexos`
+- `/?r=history-imports`
 - `/?r=config`
 
 ## Comportamiento clave
 - **Proyecto activo** en `$_SESSION['active_project_id']`.
-- **Archivo activo** en `$_SESSION['active_file']`.
-- Subidas en `public/uploads/` y metadatos en `public/uploads/files.json`.
-- Importación sin input manual de ruta, usando archivo activo.
-- Confirmación modal y bloqueo del botón durante el proceso.
+- Carga de Excel en cada importación, sin archivo global activo.
+- Subidas en `public/uploads/gastos/` y `public/uploads/nomina/`.
+- Validación de extensión `.xlsx`, MIME y tamaño máximo de 10 MB.
+- Importación automática al subir, con mensajes de insertados/warnings.
 
 ## Endpoints de acciones
-- `POST /?r=upload` sube archivo y lo deja activo.
-- `POST /?r=select-file` cambia archivo activo desde historial.
-- `POST /?r=import-gastos` importa hoja GASTOS.
-- `POST /?r=import-nomina` importa hoja NOMINA.
+- `POST /?r=import-gastos` sube y procesa hoja GASTOS.
+- `POST /?r=import-nomina` sube y procesa hoja NOMINA.
 - `GET /?r=anexos` lista anexos con filtros y paginación.
+- `GET /?r=history-imports` muestra historial de importaciones del proyecto activo.
