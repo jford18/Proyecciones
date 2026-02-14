@@ -34,25 +34,32 @@ class ExcelAnexoImportService
         $spreadsheet = IOFactory::load($path);
         $sheet = $spreadsheet->getSheetByName('GASTOS');
         if (!$sheet instanceof Worksheet) {
-            throw new \RuntimeException('No existe la hoja GASTOS.');
+            $availableSheets = implode(', ', $spreadsheet->getSheetNames());
+            throw new \RuntimeException(sprintf(
+                'No existe la hoja "GASTOS" en el archivo %s. Hojas disponibles: %s.',
+                basename($path),
+                $availableSheets === '' ? 'ninguna' : $availableSheets
+            ));
         }
 
         $year = $this->parseYearFromRangeText((string) $sheet->getCell('A3')->getValue());
         $monthsByColumn = $this->detectMonthColumns($sheet, 5, 3, 20);
 
         $rows = [];
+        $warnings = 0;
         $highestRow = $sheet->getHighestDataRow();
         for ($row = 6; $row <= $highestRow; $row++) {
-            $codigo = trim((string) $sheet->getCellByColumnAndRow(1, $row)->getFormattedValue());
-            $concepto = trim((string) $sheet->getCellByColumnAndRow(2, $row)->getFormattedValue());
+            $codigo = trim((string) $sheet->getCell([1, $row])->getFormattedValue());
+            $concepto = trim((string) $sheet->getCell([2, $row])->getFormattedValue());
             if ($codigo === '' || $concepto === '') {
                 continue;
             }
 
             foreach ($monthsByColumn as $col => $mes) {
-                $raw = $sheet->getCellByColumnAndRow($col, $row)->getCalculatedValue();
+                $raw = $sheet->getCell([$col, $row])->getCalculatedValue();
                 $valor = $this->toFloat($raw);
                 if ($valor == 0.0) {
+                    $warnings++;
                     continue;
                 }
 
@@ -77,7 +84,7 @@ class ExcelAnexoImportService
             }
         }
 
-        return ['sheet' => 'GASTOS', 'rows' => $rows];
+        return ['sheet' => 'GASTOS', 'rows' => $rows, 'warnings' => $warnings];
     }
 
     public function importNomina(string $path, int $proyectoId): array
@@ -96,7 +103,7 @@ class ExcelAnexoImportService
         $totales = [];
 
         for ($col = 1; $col <= $highestCol; $col++) {
-            $header = trim((string) $sheet->getCellByColumnAndRow($col, 4)->getFormattedValue());
+            $header = trim((string) $sheet->getCell([$col, 4])->getFormattedValue());
             if ($header === '') {
                 continue;
             }
@@ -107,7 +114,7 @@ class ExcelAnexoImportService
 
             $sum = 0.0;
             for ($row = 5; $row <= $highestRow; $row++) {
-                $sum += $this->toFloat($sheet->getCellByColumnAndRow($col, $row)->getCalculatedValue());
+                $sum += $this->toFloat($sheet->getCell([$col, $row])->getCalculatedValue());
             }
             if ($sum != 0.0) {
                 $totales[$header] = $sum;
@@ -141,7 +148,7 @@ class ExcelAnexoImportService
     {
         $months = [];
         for ($col = $fromCol; $col <= $toCol; $col++) {
-            $header = trim((string) $sheet->getCellByColumnAndRow($col, $headerRow)->getFormattedValue());
+            $header = trim((string) $sheet->getCell([$col, $headerRow])->getFormattedValue());
             $key = mb_strtolower($header);
             if ($key === '' || str_contains($key, 'acumul')) {
                 continue;
