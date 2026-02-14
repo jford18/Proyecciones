@@ -6,7 +6,9 @@ namespace App\controllers;
 
 use App\repositories\AnexoRepo;
 use App\repositories\ImportLogRepo;
+use App\repositories\ProyectoRepo;
 use App\services\ExcelAnexoImportService;
+use PDOException;
 
 class ImportController
 {
@@ -16,15 +18,32 @@ class ImportController
         private ExcelAnexoImportService $importService,
         private AnexoRepo $anexoRepo,
         private ImportLogRepo $logRepo,
+        private ProyectoRepo $proyectoRepo,
         private string $baseUploadDir
     ) {
     }
 
-    public function importGastos(int $proyectoId, array $files): array
+    public function importGastos(array $post, array $files): array
     {
+        $proyectoId = (int) ($post['proyecto_id'] ?? 0);
+        $proyecto = $this->proyectoRepo->findById($proyectoId);
+        if ($proyecto === null) {
+            throw new \RuntimeException("Proyecto no existe (ID={$proyectoId}). Seleccione un proyecto válido.");
+        }
+
         $uploaded = $this->saveUploadedExcel($files, 'gastos');
         $data = $this->importService->importGastos($uploaded['path'], $proyectoId);
-        $inserted = $this->anexoRepo->insertAnexoDetalleBatch($data['rows']);
+        try {
+            $inserted = $this->anexoRepo->insertAnexoDetalleBatch($data['rows']);
+        } catch (PDOException $exception) {
+            if ($this->isForeignKey1452($exception)) {
+                error_log('Importar GASTOS FK error: ' . $exception->getMessage());
+                throw new \RuntimeException('El Proyecto seleccionado no existe en base. Revise PROYECTO.');
+            }
+
+            throw $exception;
+        }
+
         $warnings = (int) ($data['warnings'] ?? 0);
         $message = "Importación GASTOS finalizada. Registros insertados: {$inserted}. Warnings omitidos: {$warnings}.";
         $this->logRepo->insertLog($proyectoId, $uploaded['originalName'], $data['sheet'], $inserted, $message);
@@ -37,6 +56,16 @@ class ImportController
             'warnings' => $warnings,
             'fileName' => $uploaded['originalName'],
         ];
+    }
+
+    private function isForeignKey1452(PDOException $exception): bool
+    {
+        $errorInfo = $exception->errorInfo;
+        if (is_array($errorInfo) && isset($errorInfo[1]) && (int) $errorInfo[1] === 1452) {
+            return true;
+        }
+
+        return str_contains($exception->getMessage(), '1452');
     }
 
     public function importNomina(int $proyectoId, array $files): array

@@ -7,8 +7,9 @@
     <div class="col-md-4">
       <label class="form-label">Proyecto</label>
       <select class="form-select" name="proyecto_id" required>
-        <?php foreach ($projectOptions as $projectId): ?>
-          <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>>Proyecto <?= $projectId ?></option>
+        <?php foreach ($projectOptions as $project): ?>
+          <?php $projectId = (int) $project['ID']; ?>
+          <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>><?= htmlspecialchars((string) $project['NOMBRE']) ?> (ID: <?= $projectId ?>)</option>
         <?php endforeach; ?>
       </select>
     </div>

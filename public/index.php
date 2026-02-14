@@ -8,6 +8,7 @@ use App\controllers\ImportController;
 use App\db\Db;
 use App\repositories\AnexoRepo;
 use App\repositories\ImportLogRepo;
+use App\repositories\ProyectoRepo;
 use App\services\AnexoMapeoService;
 use App\services\ExcelAnexoImportService;
 
@@ -19,15 +20,26 @@ $config = require __DIR__ . '/../src/config/config.php';
 $pdo = Db::pdo($config);
 $anexoRepo = new AnexoRepo($pdo);
 $logRepo = new ImportLogRepo($pdo);
+$proyectoRepo = new ProyectoRepo($pdo);
 $mapeoService = new AnexoMapeoService($pdo);
 $importService = new ExcelAnexoImportService($mapeoService);
-$importController = new ImportController($importService, $anexoRepo, $logRepo, $config['upload_dir']);
+$importController = new ImportController($importService, $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($logRepo, $anexoRepo);
 
-if (!isset($_SESSION['active_project_id'])) {
-    $_SESSION['active_project_id'] = 1;
+$projectOptions = $proyectoRepo->listAll();
+if ($projectOptions === []) {
+    $defaultProjectId = $proyectoRepo->createDefaultIfEmpty();
+    $_SESSION['flash'] = ['type' => 'info', 'text' => "Se creó el proyecto por defecto (ID={$defaultProjectId})."];
+    $projectOptions = $proyectoRepo->listAll();
 }
+
+$firstProjectId = isset($projectOptions[0]['ID']) ? (int) $projectOptions[0]['ID'] : 0;
+$activeProjectId = (int) ($_SESSION['active_project_id'] ?? 0);
+if ($activeProjectId < 1 || $proyectoRepo->findById($activeProjectId) === null) {
+    $activeProjectId = $firstProjectId;
+}
+$_SESSION['active_project_id'] = $activeProjectId;
 
 $route = $_GET['r'] ?? 'dashboard';
 
@@ -43,18 +55,22 @@ function redirectTo(string $route, array $query = []): never
 
 try {
     if ($route === 'set-project' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $_SESSION['active_project_id'] = max(1, (int) ($_POST['project_id'] ?? 1));
+        $selectedProjectId = (int) ($_POST['project_id'] ?? 0);
+        $selectedProject = $proyectoRepo->findById($selectedProjectId);
+        if ($selectedProject === null) {
+            $_SESSION['active_project_id'] = $firstProjectId;
+            $_SESSION['flash'] = ['type' => 'error', 'text' => "Proyecto no existe (ID={$selectedProjectId}). Se seleccionó un proyecto válido."];
+            redirectTo((string) ($_POST['back_route'] ?? 'dashboard'));
+        }
+
+        $_SESSION['active_project_id'] = $selectedProjectId;
         $_SESSION['flash'] = ['type' => 'info', 'text' => 'Proyecto activo actualizado.'];
         redirectTo((string) ($_POST['back_route'] ?? 'dashboard'));
     }
 
     if ($route === 'import-gastos' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $projectId = (int) ($_POST['proyecto_id'] ?? 0);
-        if ($projectId < 1) {
-            throw new RuntimeException('Proyecto inválido para importar GASTOS.');
-        }
-
-        $result = $importController->importGastos($projectId, $_FILES);
+        $result = $importController->importGastos($_POST, $_FILES);
+        $_SESSION['active_project_id'] = (int) ($_POST['proyecto_id'] ?? $_SESSION['active_project_id']);
         $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
         $_SESSION['import_result'] = $result;
         redirectTo('import-gastos');
@@ -62,11 +78,12 @@ try {
 
     if ($route === 'import-nomina' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $projectId = (int) ($_POST['proyecto_id'] ?? 0);
-        if ($projectId < 1) {
+        if ($projectId < 1 || $proyectoRepo->findById($projectId) === null) {
             throw new RuntimeException('Proyecto inválido para importar NÓMINA.');
         }
 
         $result = $importController->importNomina($projectId, $_FILES);
+        $_SESSION['active_project_id'] = $projectId;
         $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
         $_SESSION['import_result'] = $result;
         redirectTo('import-nomina');
@@ -79,18 +96,16 @@ try {
 $activeProjectId = (int) $_SESSION['active_project_id'];
 $importResult = $_SESSION['import_result'] ?? null;
 unset($_SESSION['import_result']);
-
-$projectOptions = [1, 2, 3, 4, 5];
-if (!in_array($activeProjectId, $projectOptions, true)) {
-    $projectOptions[] = $activeProjectId;
-    sort($projectOptions);
-}
+$activeProject = $proyectoRepo->findById($activeProjectId);
+$hasProjects = $projectOptions !== [];
 
 $viewData = [
     'route' => $route,
     'flash' => $flash,
     'activeProjectId' => $activeProjectId,
+    'activeProject' => $activeProject,
     'projectOptions' => $projectOptions,
+    'hasProjects' => $hasProjects,
     'importResult' => $importResult,
 ];
 
