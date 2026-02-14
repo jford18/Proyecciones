@@ -42,10 +42,11 @@ class ImportController
     {
         $data = $this->importService->importGastos($path, $proyectoId);
         $inserted = $this->anexoRepo->insertAnexoDetalleBatch($data['rows']);
-        $message = "Importación GASTOS finalizada. Registros: {$inserted}";
+        $warnings = (int) ($data['warnings'] ?? 0);
+        $message = "Importación GASTOS finalizada. Registros insertados: {$inserted}. Warnings omitidos: {$warnings}";
         $this->logRepo->insertLog($proyectoId, basename($path), $data['sheet'], $inserted, $message);
 
-        return ['ok' => true, 'message' => $message, 'inserted' => $inserted];
+        return ['ok' => true, 'message' => $message, 'inserted' => $inserted, 'warnings' => $warnings];
     }
 
     public function importNomina(int $proyectoId, string $path): array

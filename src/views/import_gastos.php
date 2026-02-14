@@ -20,7 +20,7 @@
 <div class="card mt-3 shadow-sm"><div class="card-body">
   <h5>Resultado</h5>
   <p class="mb-1">Registros insertados: <strong><?= (int) ($importResult['inserted'] ?? 0) ?></strong></p>
-  <p class="mb-3">Warnings: filas omitidas por valor vacío/cero durante el parseo.</p>
+  <p class="mb-3">Warnings omitidos: <strong><?= (int) ($importResult['warnings'] ?? 0) ?></strong> (filas/celdas con valor vacío, nulo o cero).</p>
   <a class="btn btn-outline-secondary btn-sm" href="?r=anexos&tipoAnexo=GASTOS&proyectoId=<?= $activeProjectId ?>">Ver anexos importados</a>
 </div></div>
 <?php endif; ?>
