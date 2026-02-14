@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\controllers\AnexoController;
 use App\controllers\DashboardController;
-use App\controllers\FileController;
 use App\controllers\ImportController;
 use App\db\Db;
 use App\repositories\AnexoRepo;
@@ -22,10 +21,9 @@ $anexoRepo = new AnexoRepo($pdo);
 $logRepo = new ImportLogRepo($pdo);
 $mapeoService = new AnexoMapeoService($pdo);
 $importService = new ExcelAnexoImportService($mapeoService);
-$importController = new ImportController($importService, $anexoRepo, $logRepo);
+$importController = new ImportController($importService, $anexoRepo, $logRepo, $config['upload_dir']);
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($logRepo, $anexoRepo);
-$fileController = new FileController($config['upload_dir']);
 
 if (!isset($_SESSION['active_project_id'])) {
     $_SESSION['active_project_id'] = 1;
@@ -50,54 +48,27 @@ try {
         redirectTo((string) ($_POST['back_route'] ?? 'dashboard'));
     }
 
-    if ($route === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $result = $importController->uploadExcel($_FILES, $config);
-        if (($result['ok'] ?? false) === true) {
-            $fileController->registerUploadedFile((string) $result['path']);
-            $_SESSION['active_file'] = $result['path'];
-            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Archivo cargado y seleccionado.'];
-        } else {
-            $_SESSION['flash'] = ['type' => 'error', 'text' => (string) ($result['message'] ?? 'No se pudo subir el archivo.')];
-        }
-
-        redirectTo('upload');
-    }
-
-    if ($route === 'select-file' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $selected = $fileController->selectFile((string) ($_POST['path'] ?? ''));
-        if ($selected !== null) {
-            $_SESSION['active_file'] = $selected['path'];
-            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Archivo activo actualizado.'];
-        } else {
-            $_SESSION['flash'] = ['type' => 'error', 'text' => 'No se encontró el archivo seleccionado.'];
-        }
-
-        redirectTo((string) ($_POST['back_route'] ?? 'files'));
-    }
-
     if ($route === 'import-gastos' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $activeFile = (string) ($_SESSION['active_file'] ?? '');
-        if ($activeFile === '') {
-            throw new RuntimeException('Primero sube o selecciona un Excel.');
+        $projectId = (int) ($_POST['proyecto_id'] ?? 0);
+        if ($projectId < 1) {
+            throw new RuntimeException('Proyecto inválido para importar GASTOS.');
         }
 
-        $projectId = (int) $_SESSION['active_project_id'];
-        $result = $importController->importGastos($projectId, $activeFile);
+        $result = $importController->importGastos($projectId, $_FILES);
         $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
-        $_SESSION['import_result'] = $result + ['type' => 'GASTOS'];
+        $_SESSION['import_result'] = $result;
         redirectTo('import-gastos');
     }
 
     if ($route === 'import-nomina' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $activeFile = (string) ($_SESSION['active_file'] ?? '');
-        if ($activeFile === '') {
-            throw new RuntimeException('Primero sube o selecciona un Excel.');
+        $projectId = (int) ($_POST['proyecto_id'] ?? 0);
+        if ($projectId < 1) {
+            throw new RuntimeException('Proyecto inválido para importar NÓMINA.');
         }
 
-        $projectId = (int) $_SESSION['active_project_id'];
-        $result = $importController->importNomina($projectId, $activeFile);
+        $result = $importController->importNomina($projectId, $_FILES);
         $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
-        $_SESSION['import_result'] = $result + ['type' => 'NOMINA'];
+        $_SESSION['import_result'] = $result;
         redirectTo('import-nomina');
     }
 } catch (Throwable $e) {
@@ -106,7 +77,6 @@ try {
 }
 
 $activeProjectId = (int) $_SESSION['active_project_id'];
-$activeFile = $_SESSION['active_file'] ?? null;
 $importResult = $_SESSION['import_result'] ?? null;
 unset($_SESSION['import_result']);
 
@@ -120,7 +90,6 @@ $viewData = [
     'route' => $route,
     'flash' => $flash,
     'activeProjectId' => $activeProjectId,
-    'activeFile' => $activeFile,
     'projectOptions' => $projectOptions,
     'importResult' => $importResult,
 ];
@@ -129,13 +98,6 @@ switch ($route) {
     case 'dashboard':
         $viewData['stats'] = $dashboardController->stats($activeProjectId);
         $contentView = __DIR__ . '/../src/views/dashboard.php';
-        break;
-    case 'upload':
-        $contentView = __DIR__ . '/../src/views/upload.php';
-        break;
-    case 'files':
-        $viewData['files'] = $fileController->listFiles();
-        $contentView = __DIR__ . '/../src/views/files.php';
         break;
     case 'import-gastos':
         $contentView = __DIR__ . '/../src/views/import_gastos.php';
@@ -147,8 +109,11 @@ switch ($route) {
         $viewData['anexos'] = $anexoController->list($_GET + ['proyectoId' => $_GET['proyectoId'] ?? $activeProjectId]);
         $contentView = __DIR__ . '/../src/views/anexos.php';
         break;
+    case 'history-imports':
+        $viewData['logs'] = $logRepo->listRecent($activeProjectId, 100);
+        $contentView = __DIR__ . '/../src/views/history_imports.php';
+        break;
     case 'config':
-        $viewData['files'] = $fileController->listFiles();
         $contentView = __DIR__ . '/../src/views/config.php';
         break;
     default:

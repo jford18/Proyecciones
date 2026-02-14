@@ -1,26 +1,34 @@
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item active">Importar GASTOS</li></ol></nav>
 <div class="card shadow-sm"><div class="card-body">
-  <h4>Importar GASTOS</h4>
-  <p class="text-muted">Hoja esperada: <strong>GASTOS</strong>. Se detectan meses (enero-octubre) y se omiten valores en cero.</p>
+  <h4>Selecciona archivo Excel (GASTOS)</h4>
+  <p class="text-muted">Carga un archivo <strong>.xlsx</strong> para importar la hoja <strong>GASTOS</strong>.</p>
 
-  <?php if (!$activeFile): ?>
-    <div class="alert alert-info">Primero sube o selecciona un Excel. <a href="?r=upload">Ir a subir archivo</a>.</div>
-  <?php else: ?>
-    <div class="row g-2 mb-3">
-      <div class="col-md-6"><label class="form-label">Proyecto activo</label><input class="form-control" readonly value="Proyecto <?= $activeProjectId ?>"></div>
-      <div class="col-md-6"><label class="form-label">Archivo activo</label><div class="input-group"><input class="form-control" readonly value="<?= htmlspecialchars(basename((string) $activeFile)) ?>"><a class="btn btn-outline-secondary" href="?r=files">Cambiar</a></div></div>
+  <form method="post" action="?r=import-gastos" enctype="multipart/form-data" class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">Proyecto</label>
+      <select class="form-select" name="proyecto_id" required>
+        <?php foreach ($projectOptions as $projectId): ?>
+          <option value="<?= $projectId ?>" <?= $activeProjectId === $projectId ? 'selected' : '' ?>>Proyecto <?= $projectId ?></option>
+        <?php endforeach; ?>
+      </select>
     </div>
-    <form method="post" action="?r=import-gastos" onsubmit="return confirmImport(this, 'GASTOS', '<?= $activeProjectId ?>', '<?= htmlspecialchars(basename((string) $activeFile), ENT_QUOTES) ?>')">
-      <button class="btn btn-primary" type="submit" data-loading-text="Importando...">Importar ahora</button>
-    </form>
-  <?php endif; ?>
+    <div class="col-md-8">
+      <label class="form-label">Archivo Excel</label>
+      <input class="form-control" type="file" name="excel" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+      <div class="form-text">Máximo 10 MB. Se validará extensión, MIME y hoja esperada.</div>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary" type="submit">Importar ahora</button>
+    </div>
+  </form>
 </div></div>
 
 <?php if ($importResult && ($importResult['type'] ?? '') === 'GASTOS'): ?>
-<div class="card mt-3 shadow-sm"><div class="card-body">
-  <h5>Resultado</h5>
-  <p class="mb-1">Registros insertados: <strong><?= (int) ($importResult['inserted'] ?? 0) ?></strong></p>
-  <p class="mb-3">Warnings omitidos: <strong><?= (int) ($importResult['warnings'] ?? 0) ?></strong> (filas/celdas con valor vacío, nulo o cero).</p>
-  <a class="btn btn-outline-secondary btn-sm" href="?r=anexos&tipoAnexo=GASTOS&proyectoId=<?= $activeProjectId ?>">Ver anexos importados</a>
-</div></div>
+  <div class="card mt-3 shadow-sm"><div class="card-body">
+    <h5>Resultado de importación</h5>
+    <div class="alert alert-success mb-2">Archivo procesado: <strong><?= htmlspecialchars((string) ($importResult['fileName'] ?? '')) ?></strong></div>
+    <div class="alert alert-primary mb-2">Registros insertados: <strong><?= (int) ($importResult['inserted'] ?? 0) ?></strong></div>
+    <div class="alert alert-warning mb-3">Warnings omitidos: <strong><?= (int) ($importResult['warnings'] ?? 0) ?></strong>.</div>
+    <a class="btn btn-outline-secondary btn-sm" href="?r=anexos&tipoAnexo=GASTOS&proyectoId=<?= $activeProjectId ?>">Ver anexos importados</a>
+  </div></div>
 <?php endif; ?>
