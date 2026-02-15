@@ -10,40 +10,33 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class ExcelAnexoImportService
 {
     private array $meses = [
-        'enero' => 1,
-        'febrero' => 2,
-        'marzo' => 3,
-        'abril' => 4,
-        'mayo' => 5,
-        'junio' => 6,
-        'julio' => 7,
-        'agosto' => 8,
-        'septiembre' => 9,
-        'setiembre' => 9,
-        'octubre' => 10,
-        'noviembre' => 11,
-        'diciembre' => 12,
+        'ene' => 1, 'enero' => 1,
+        'feb' => 2, 'febrero' => 2,
+        'mar' => 3, 'marzo' => 3,
+        'abr' => 4, 'abril' => 4,
+        'may' => 5, 'mayo' => 5,
+        'jun' => 6, 'junio' => 6,
+        'jul' => 7, 'julio' => 7,
+        'ago' => 8, 'agosto' => 8,
+        'sep' => 9, 'sept' => 9, 'septiembre' => 9,
+        'oct' => 10, 'octubre' => 10,
+        'nov' => 11, 'noviembre' => 11,
+        'dic' => 12, 'diciembre' => 12,
     ];
 
-    public function __construct(private AnexoMapeoService $mapeoService)
-    {
-    }
-
-    public function importGastos(string $path, int $proyectoId): array
+    public function importAnexo(string $path, int $proyectoId, string $tipoAnexo, string $tipo): array
     {
         $spreadsheet = IOFactory::load($path);
-        $sheet = $spreadsheet->getSheetByName('GASTOS');
+        $sheet = $this->resolveSheet($spreadsheet->getAllSheets(), $tipoAnexo);
         if (!$sheet instanceof Worksheet) {
-            $availableSheets = implode(', ', $spreadsheet->getSheetNames());
-            throw new \RuntimeException(sprintf(
-                'No existe la hoja "GASTOS" en el archivo %s. Hojas disponibles: %s.',
-                basename($path),
-                $availableSheets === '' ? 'ninguna' : $availableSheets
-            ));
+            throw new \RuntimeException("No existe la hoja esperada para {$tipoAnexo}.");
         }
 
-        $year = $this->parseYearFromRangeText((string) $sheet->getCell('A3')->getValue());
-        $monthsByColumn = $this->detectMonthColumns($sheet, 5, 3, 20);
+        $year = $this->detectYear($sheet);
+        $monthColumns = $this->detectMonthColumns($sheet);
+        if ($monthColumns === []) {
+            throw new \RuntimeException("No se detectaron columnas de meses en la hoja {$sheet->getTitle()}.");
+        }
 
         $rows = [];
         $warnings = 0;
@@ -51,139 +44,89 @@ class ExcelAnexoImportService
         for ($row = 6; $row <= $highestRow; $row++) {
             $codigo = trim((string) $sheet->getCell([1, $row])->getFormattedValue());
             $concepto = trim((string) $sheet->getCell([2, $row])->getFormattedValue());
-            if ($codigo === '' || $concepto === '') {
+            $descripcion = trim((string) $sheet->getCell([3, $row])->getFormattedValue());
+            if ($codigo === '' && $concepto === '') {
                 continue;
             }
 
-            foreach ($monthsByColumn as $col => $mes) {
-                $raw = $sheet->getCell([$col, $row])->getCalculatedValue();
-                $valor = $this->toFloat($raw);
-                if ($valor == 0.0) {
+            foreach ($monthColumns as $col => $mes) {
+                $valor = $this->toFloat($sheet->getCell([$col, $row])->getCalculatedValue());
+                if ($valor === 0.0) {
                     $warnings++;
                     continue;
                 }
 
-                $fecha = sprintf('%04d-%02d-01 00:00:00', $year, $mes);
-                $periodo = (int) sprintf('%04d%02d01', $year, $mes);
                 $rows[] = [
                     'proyecto_id' => $proyectoId,
-                    'tipo_anexo' => 'GASTOS',
-                    'tipo' => 'PRESUPUESTO',
-                    'fecha' => $fecha,
-                    'periodo' => $periodo,
+                    'tipo_anexo' => $tipoAnexo,
+                    'tipo' => $tipo,
+                    'fecha' => sprintf('%04d-%02d-01 00:00:00', $year, $mes),
+                    'periodo' => (int) sprintf('%04d%02d01', $year, $mes),
                     'mes' => $mes,
-                    'codigo' => $codigo,
-                    'concepto' => $concepto,
-                    'descripcion' => null,
+                    'codigo' => $codigo !== '' ? $codigo : null,
+                    'concepto' => $concepto !== '' ? $concepto : null,
+                    'descripcion' => $descripcion !== '' ? $descripcion : null,
                     'valor' => $valor,
                     'origen_archivo' => basename($path),
-                    'origen_hoja' => 'GASTOS',
+                    'origen_hoja' => $sheet->getTitle(),
                     'origen_fila' => $row,
-                    'flujo_linea_id' => $this->mapeoService->resolveFlujoLineaId($proyectoId, 'GASTOS', $codigo, $concepto),
+                    'flujo_linea_id' => null,
                 ];
             }
         }
 
-        return ['sheet' => 'GASTOS', 'rows' => $rows, 'warnings' => $warnings];
+        return ['sheet' => $sheet->getTitle(), 'rows' => $rows, 'warnings' => $warnings];
     }
 
-    public function importNomina(string $path, int $proyectoId): array
+    private function resolveSheet(array $sheets, string $tipoAnexo): ?Worksheet
     {
-        $spreadsheet = IOFactory::load($path);
-        $sheet = $spreadsheet->getSheetByName('NOMINA');
-        if (!$sheet instanceof Worksheet) {
-            throw new \RuntimeException('No existe la hoja NOMINA.');
-        }
+        $aliases = [
+            'GASTOS' => ['GASTOS'],
+            'NOMINA' => ['NOMINA', 'NÓMINA'],
+            'COBRANZA' => ['COBRANZA'],
+            'ACTIVOS' => ['ACTIVOS'],
+        ][$tipoAnexo] ?? [$tipoAnexo];
 
-        [$mes, $anio] = $this->parseNominaMonthYear((string) $sheet->getCell('A2')->getValue());
-        $highestCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
-        $highestRow = $sheet->getHighestDataRow();
-
-        $excludedHeaders = ['número', 'numero', 'cedula', 'cédula', 'empleado', 'departamento', 'cargo', 'centro de costo', 'fecha registro'];
-        $totales = [];
-        $warnings = 0;
-
-        for ($col = 1; $col <= $highestCol; $col++) {
-            $header = trim((string) $sheet->getCell([$col, 4])->getFormattedValue());
-            if ($header === '') {
-                continue;
-            }
-
-            if (in_array(mb_strtolower($header), $excludedHeaders, true)) {
-                continue;
-            }
-
-            $sum = 0.0;
-            for ($row = 5; $row <= $highestRow; $row++) {
-                $sum += $this->toFloat($sheet->getCell([$col, $row])->getCalculatedValue());
-            }
-            if ($sum != 0.0) {
-                $totales[$header] = $sum;
-            } else {
-                $warnings++;
+        foreach ($sheets as $sheet) {
+            $name = mb_strtoupper(trim($sheet->getTitle()));
+            foreach ($aliases as $alias) {
+                if ($name === mb_strtoupper($alias)) {
+                    return $sheet;
+                }
             }
         }
 
-        $rows = [];
-        foreach ($totales as $concepto => $valor) {
-            $rows[] = [
-                'proyecto_id' => $proyectoId,
-                'tipo_anexo' => 'NOMINA',
-                'tipo' => 'REAL',
-                'fecha' => sprintf('%04d-%02d-01 00:00:00', $anio, $mes),
-                'periodo' => (int) sprintf('%04d%02d01', $anio, $mes),
-                'mes' => $mes,
-                'codigo' => null,
-                'concepto' => $concepto,
-                'descripcion' => 'NOMINA TOTAL',
-                'valor' => $valor,
-                'origen_archivo' => basename($path),
-                'origen_hoja' => 'NOMINA',
-                'origen_fila' => 4,
-                'flujo_linea_id' => $this->mapeoService->resolveFlujoLineaId($proyectoId, 'NOMINA', null, $concepto),
-            ];
-        }
-
-        return ['sheet' => 'NOMINA', 'rows' => $rows, 'warnings' => $warnings];
+        return $sheets[0] ?? null;
     }
 
-    private function detectMonthColumns(Worksheet $sheet, int $headerRow, int $fromCol, int $toCol): array
+    private function detectYear(Worksheet $sheet): int
     {
-        $months = [];
-        for ($col = $fromCol; $col <= $toCol; $col++) {
-            $header = trim((string) $sheet->getCell([$col, $headerRow])->getFormattedValue());
-            $key = mb_strtolower($header);
-            if ($key === '' || str_contains($key, 'acumul')) {
-                continue;
+        $candidates = [(string) $sheet->getCell('A2')->getValue(), (string) $sheet->getCell('A3')->getValue()];
+        foreach ($candidates as $text) {
+            if (preg_match('/(20\d{2})/', $text, $m) === 1) {
+                return (int) $m[1];
             }
-            if (isset($this->meses[$key])) {
-                $months[$col] = $this->meses[$key];
-            }
-        }
-
-        return $months;
-    }
-
-    private function parseYearFromRangeText(string $text): int
-    {
-        if (preg_match('/(\d{4})\D*$/', $text, $m) === 1) {
-            return (int) $m[1];
         }
 
         return (int) date('Y');
     }
 
-    private function parseNominaMonthYear(string $text): array
+    private function detectMonthColumns(Worksheet $sheet): array
     {
-        if (preg_match('/-\s*([[:alpha:]áéíóúÁÉÍÓÚ]+)\s+(\d{4})/u', $text, $m) === 1) {
-            $mesNombre = mb_strtolower(trim($m[1]));
-            $mes = $this->meses[$mesNombre] ?? null;
-            if ($mes !== null) {
-                return [$mes, (int) $m[2]];
+        $months = [];
+        for ($headerRow = 4; $headerRow <= 6; $headerRow++) {
+            for ($col = 3; $col <= 20; $col++) {
+                $header = mb_strtolower(trim((string) $sheet->getCell([$col, $headerRow])->getFormattedValue()));
+                if ($header !== '' && isset($this->meses[$header])) {
+                    $months[$col] = $this->meses[$header];
+                }
+            }
+            if ($months !== []) {
+                break;
             }
         }
 
-        return [(int) date('n'), (int) date('Y')];
+        return $months;
     }
 
     private function toFloat(mixed $value): float
@@ -191,7 +134,6 @@ class ExcelAnexoImportService
         if ($value === null || $value === '') {
             return 0.0;
         }
-
         if (is_numeric($value)) {
             return (float) $value;
         }

@@ -7,118 +7,138 @@ use App\controllers\DashboardController;
 use App\controllers\ImportController;
 use App\db\Db;
 use App\repositories\AnexoRepo;
+use App\repositories\FlujoRepo;
 use App\repositories\ImportLogRepo;
 use App\repositories\ProyectoRepo;
-use App\services\AnexoMapeoService;
 use App\services\ExcelAnexoImportService;
+use App\services\FlujoGeneratorService;
+use App\services\PgConsolidationService;
+use App\services\WorkflowService;
 
 session_start();
-
 require __DIR__ . '/../vendor/autoload.php';
 $config = require __DIR__ . '/../src/config/config.php';
+$pgMap = require __DIR__ . '/../src/config/pg_map.php';
 
 $pdo = Db::pdo($config);
 $anexoRepo = new AnexoRepo($pdo);
 $logRepo = new ImportLogRepo($pdo);
 $proyectoRepo = new ProyectoRepo($pdo);
-$mapeoService = new AnexoMapeoService($pdo);
-$importService = new ExcelAnexoImportService($mapeoService);
-$importController = new ImportController($importService, $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
+$flujoRepo = new FlujoRepo($pdo);
+$pgService = new PgConsolidationService($anexoRepo, __DIR__ . '/../var/cache', $pgMap);
+$workflowService = new WorkflowService($anexoRepo, $logRepo, $pgService);
+$flujoService = new FlujoGeneratorService($flujoRepo, $pgMap);
+$importController = new ImportController(new ExcelAnexoImportService(), $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
 $anexoController = new AnexoController($anexoRepo);
-$dashboardController = new DashboardController($logRepo, $anexoRepo);
+$dashboardController = new DashboardController($workflowService);
 
 $projectOptions = $proyectoRepo->listAll();
 if ($projectOptions === []) {
-    $defaultProjectId = $proyectoRepo->createDefaultIfEmpty();
-    $_SESSION['flash'] = ['type' => 'info', 'text' => "Se creó el proyecto por defecto (ID={$defaultProjectId})."];
+    $proyectoRepo->createDefaultIfEmpty();
     $projectOptions = $proyectoRepo->listAll();
 }
-
 $firstProjectId = isset($projectOptions[0]['ID']) ? (int) $projectOptions[0]['ID'] : 0;
-$activeProjectId = (int) ($_SESSION['active_project_id'] ?? 0);
-if ($activeProjectId < 1 || $proyectoRepo->findById($activeProjectId) === null) {
-    $activeProjectId = $firstProjectId;
-}
-$_SESSION['active_project_id'] = $activeProjectId;
+$activeProjectId = (int) ($_SESSION['active_project_id'] ?? $firstProjectId);
+$activeTipo = in_array(($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO'), ['PRESUPUESTO', 'REAL'], true) ? (string) ($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO') : 'PRESUPUESTO';
+$_SESSION['active_tipo'] = $activeTipo;
 
 $route = $_GET['r'] ?? 'dashboard';
-
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
 
-function redirectTo(string $route, array $query = []): never
-{
-    $params = array_merge(['r' => $route], $query);
-    header('Location: ?' . http_build_query($params));
+function redirectTo(string $route, array $query = []): never {
+    header('Location: ?' . http_build_query(array_merge(['r' => $route], $query)));
     exit;
 }
 
 try {
     if ($route === 'set-project' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $selectedProjectId = (int) ($_POST['project_id'] ?? 0);
-        $selectedProject = $proyectoRepo->findById($selectedProjectId);
-        if ($selectedProject === null) {
-            $_SESSION['active_project_id'] = $firstProjectId;
-            $_SESSION['flash'] = ['type' => 'error', 'text' => "Proyecto no existe (ID={$selectedProjectId}). Se seleccionó un proyecto válido."];
-            redirectTo((string) ($_POST['back_route'] ?? 'dashboard'));
-        }
-
-        $_SESSION['active_project_id'] = $selectedProjectId;
-        $_SESSION['flash'] = ['type' => 'info', 'text' => 'Proyecto activo actualizado.'];
-        redirectTo((string) ($_POST['back_route'] ?? 'dashboard'));
+        $_SESSION['active_project_id'] = (int) ($_POST['project_id'] ?? $firstProjectId);
+        redirectTo((string) ($_POST['back_route'] ?? 'dashboard'), ['tipo' => $activeTipo]);
     }
 
-    if ($route === 'import-gastos' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $result = $importController->importGastos($_POST, $_FILES);
-        $_SESSION['active_project_id'] = (int) ($_POST['proyecto_id'] ?? $_SESSION['active_project_id']);
-        $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
+    $importRoutes = ['import-gastos' => 'GASTOS', 'import-nomina' => 'NOMINA', 'import-cobranza' => 'COBRANZA', 'import-activos' => 'ACTIVOS'];
+    if (isset($importRoutes[$route]) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $tipoAnexo = $importRoutes[$route];
+        $result = $importController->importAnexo($tipoAnexo, $_POST, $_FILES);
+        $_SESSION['active_project_id'] = (int) ($_POST['proyecto_id'] ?? $activeProjectId);
         $_SESSION['import_result'] = $result;
-        redirectTo('import-gastos');
+        $_SESSION['flash'] = ['type' => 'success', 'text' => $result['message']];
+        redirectTo($route, ['tipo' => $activeTipo]);
     }
 
-    if ($route === 'import-nomina' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $projectId = (int) ($_POST['proyecto_id'] ?? 0);
-        if ($projectId < 1 || $proyectoRepo->findById($projectId) === null) {
-            throw new RuntimeException('Proyecto inválido para importar NÓMINA.');
+    if ($route === 'consolidar-pg' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $status = $workflowService->status($activeProjectId, $activeTipo);
+        if (!$status['step1']['ok']) {
+            throw new RuntimeException('Paso 2 bloqueado: primero importe anexos en Paso 1.');
         }
+        $pg = $pgService->consolidate($activeProjectId, $activeTipo);
+        $_SESSION['flash'] = ['type' => 'success', 'text' => 'PG consolidado correctamente.'];
+        $_SESSION['pg_preview'] = $pg;
+        $logRepo->insertLog($activeProjectId, '-', 'PG_CONSOLIDADO', 0, 'Consolidación PG ejecutada');
+        redirectTo('consolidar-pg', ['tipo' => $activeTipo]);
+    }
 
-        $result = $importController->importNomina($projectId, $_FILES);
-        $_SESSION['active_project_id'] = $projectId;
-        $_SESSION['flash'] = ['type' => 'success', 'text' => (string) $result['message']];
-        $_SESSION['import_result'] = $result;
-        redirectTo('import-nomina');
+    if ($route === 'generar-flujo' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $status = $workflowService->status($activeProjectId, $activeTipo);
+        if (!$status['step1']['ok'] || !$status['step2']['ok']) {
+            throw new RuntimeException('Paso 3 bloqueado: complete Paso 1 y Paso 2 antes de generar FLUJO.');
+        }
+        $pg = $pgService->load($activeProjectId, $activeTipo);
+        if ($pg === null) {
+            throw new RuntimeException('No existe consolidación PG para este proyecto/tipo.');
+        }
+        $count = $flujoService->generate($activeProjectId, $activeTipo, $pg);
+        $logRepo->insertLog($activeProjectId, '-', 'FLUJO_GENERADO', $count, 'Generación de flujo final');
+        $_SESSION['flash'] = ['type' => 'success', 'text' => "Flujo generado. Celdas actualizadas: {$count}."];
+        redirectTo('flujo', ['tipo' => $activeTipo]);
     }
 } catch (Throwable $e) {
     $_SESSION['flash'] = ['type' => 'error', 'text' => $e->getMessage()];
-    redirectTo($route === '' ? 'dashboard' : $route);
+    redirectTo($route === '' ? 'dashboard' : $route, ['tipo' => $activeTipo]);
 }
 
-$activeProjectId = (int) $_SESSION['active_project_id'];
-$importResult = $_SESSION['import_result'] ?? null;
-unset($_SESSION['import_result']);
-$activeProject = $proyectoRepo->findById($activeProjectId);
-$hasProjects = $projectOptions !== [];
-
+$activeProjectId = (int) ($_SESSION['active_project_id'] ?? $firstProjectId);
 $viewData = [
     'route' => $route,
     'flash' => $flash,
     'activeProjectId' => $activeProjectId,
-    'activeProject' => $activeProject,
     'projectOptions' => $projectOptions,
-    'hasProjects' => $hasProjects,
-    'importResult' => $importResult,
+    'activeTipo' => $activeTipo,
+    'importResult' => $_SESSION['import_result'] ?? null,
 ];
+unset($_SESSION['import_result']);
 
 switch ($route) {
     case 'dashboard':
-        $viewData['stats'] = $dashboardController->stats($activeProjectId);
+        $viewData['stats'] = $dashboardController->stats($activeProjectId, $activeTipo);
         $contentView = __DIR__ . '/../src/views/dashboard.php';
         break;
-    case 'import-gastos':
-        $contentView = __DIR__ . '/../src/views/import_gastos.php';
+    case 'import-gastos': case 'import-nomina': case 'import-cobranza': case 'import-activos':
+        $labels = ['import-gastos' => ['GASTOS', '1.1'], 'import-nomina' => ['NOMINA', '1.2'], 'import-cobranza' => ['COBRANZA', '1.3'], 'import-activos' => ['ACTIVOS', '1.4']];
+        [$viewData['anexoTipo'], $viewData['stepLabel']] = $labels[$route];
+        $contentView = __DIR__ . '/../src/views/import_anexo.php';
         break;
-    case 'import-nomina':
-        $contentView = __DIR__ . '/../src/views/import_nomina.php';
+    case 'consolidar-pg':
+        $viewData['pgPreview'] = $_SESSION['pg_preview'] ?? $pgService->load($activeProjectId, $activeTipo);
+        unset($_SESSION['pg_preview']);
+        $contentView = __DIR__ . '/../src/views/consolidar_pg.php';
+        break;
+    case 'generar-flujo':
+        $contentView = __DIR__ . '/../src/views/generar_flujo.php';
+        break;
+    case 'flujo':
+        $rows = $flujoRepo->report($activeProjectId, $activeTipo);
+        $byLinea = [];
+        foreach ($rows as $row) {
+            $id = (int) $row['ID'];
+            $byLinea[$id] ??= ['SECCION' => $row['SECCION'], 'NOMBRE' => $row['NOMBRE'], 'meses' => array_fill(1, 12, 0.0)];
+            if ($row['MES'] !== null) {
+                $byLinea[$id]['meses'][(int) $row['MES']] = (float) $row['VALOR'];
+            }
+        }
+        $viewData['flujo'] = array_values($byLinea);
+        $contentView = __DIR__ . '/../src/views/flujo.php';
         break;
     case 'anexos':
         $viewData['anexos'] = $anexoController->list($_GET + ['proyectoId' => $_GET['proyectoId'] ?? $activeProjectId]);
@@ -132,7 +152,7 @@ switch ($route) {
         $contentView = __DIR__ . '/../src/views/config.php';
         break;
     default:
-        redirectTo('dashboard');
+        redirectTo('dashboard', ['tipo' => $activeTipo]);
 }
 
 require __DIR__ . '/../src/views/layout.php';

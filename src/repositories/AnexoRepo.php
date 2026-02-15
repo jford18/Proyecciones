@@ -28,7 +28,6 @@ class AnexoRepo
 
         $stmt = $this->pdo->prepare($sql);
         $inserted = 0;
-
         $this->pdo->beginTransaction();
         foreach ($rows as $row) {
             $stmt->execute($row);
@@ -44,7 +43,6 @@ class AnexoRepo
         $sql = 'SELECT ID, TIPO_ANEXO, TIPO, MES, PERIODO, CODIGO, CONCEPTO, DESCRIPCION, VALOR, ORIGEN_HOJA, ORIGEN_FILA
                 FROM ANEXO_DETALLE WHERE 1=1';
         $params = [];
-
         if (!empty($filters['proyectoId'])) {
             $sql .= ' AND PROYECTO_ID = :proyecto_id';
             $params['proyecto_id'] = (int) $filters['proyectoId'];
@@ -57,13 +55,8 @@ class AnexoRepo
             $sql .= ' AND TIPO = :tipo';
             $params['tipo'] = $filters['tipo'];
         }
-        if (!empty($filters['mes'])) {
-            $sql .= ' AND MES = :mes';
-            $params['mes'] = (int) $filters['mes'];
-        }
 
         $sql .= ' ORDER BY ID DESC LIMIT :limit OFFSET :offset';
-
         $stmt = $this->pdo->prepare($sql);
         foreach ($params as $key => $value) {
             $stmt->bindValue(':' . $key, $value);
@@ -77,9 +70,8 @@ class AnexoRepo
 
     public function countAnexos(array $filters): int
     {
-        $sql = 'SELECT COUNT(*) AS total FROM ANEXO_DETALLE WHERE 1=1';
+        $sql = 'SELECT COUNT(*) FROM ANEXO_DETALLE WHERE 1=1';
         $params = [];
-
         if (!empty($filters['proyectoId'])) {
             $sql .= ' AND PROYECTO_ID = :proyecto_id';
             $params['proyecto_id'] = (int) $filters['proyectoId'];
@@ -91,10 +83,6 @@ class AnexoRepo
         if (!empty($filters['tipo'])) {
             $sql .= ' AND TIPO = :tipo';
             $params['tipo'] = $filters['tipo'];
-        }
-        if (!empty($filters['mes'])) {
-            $sql .= ' AND MES = :mes';
-            $params['mes'] = (int) $filters['mes'];
         }
 
         $stmt = $this->pdo->prepare($sql);
@@ -108,21 +96,44 @@ class AnexoRepo
         $stmtTotal = $this->pdo->prepare('SELECT COUNT(*) FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id');
         $stmtTotal->execute(['project_id' => $projectId]);
 
-        $stmtToday = $this->pdo->prepare('SELECT COUNT(*) FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id AND DATE(FECHA) = CURDATE()');
-        $stmtToday->execute(['project_id' => $projectId]);
-
         return [
-            'today' => (int) $stmtToday->fetchColumn(),
             'total' => (int) $stmtTotal->fetchColumn(),
         ];
     }
 
-    public function updateFlujoLineaId(int $anexoId, ?int $flujoLineaId): void
+    public function step1Status(int $projectId): array
     {
-        $stmt = $this->pdo->prepare('UPDATE ANEXO_DETALLE SET FLUJO_LINEA_ID = :flujo_linea_id WHERE ID = :id');
-        $stmt->execute([
-            'flujo_linea_id' => $flujoLineaId,
-            'id' => $anexoId,
-        ]);
+        $stmt = $this->pdo->prepare('SELECT TIPO_ANEXO, COUNT(*) as total, SUM(VALOR) as monto FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id GROUP BY TIPO_ANEXO');
+        $stmt->execute(['project_id' => $projectId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $status = [
+            'GASTOS' => ['ok' => false, 'total' => 0, 'monto' => 0.0],
+            'NOMINA' => ['ok' => false, 'total' => 0, 'monto' => 0.0],
+            'COBRANZA' => ['ok' => false, 'total' => 0, 'monto' => 0.0],
+            'ACTIVOS' => ['ok' => false, 'total' => 0, 'monto' => 0.0],
+        ];
+
+        foreach ($rows as $row) {
+            $tipo = (string) $row['TIPO_ANEXO'];
+            if (!isset($status[$tipo])) {
+                continue;
+            }
+            $status[$tipo] = [
+                'ok' => ((int) $row['total']) > 0,
+                'total' => (int) $row['total'],
+                'monto' => (float) $row['monto'],
+            ];
+        }
+
+        return $status;
+    }
+
+    public function aggregateForConsolidation(int $projectId, string $tipo): array
+    {
+        $stmt = $this->pdo->prepare('SELECT TIPO_ANEXO, MES, CODIGO, CONCEPTO, SUM(VALOR) as VALOR FROM ANEXO_DETALLE WHERE PROYECTO_ID = :project_id AND TIPO = :tipo GROUP BY TIPO_ANEXO, MES, CODIGO, CONCEPTO');
+        $stmt->execute(['project_id' => $projectId, 'tipo' => $tipo]);
+
+        return $stmt->fetchAll() ?: [];
     }
 }

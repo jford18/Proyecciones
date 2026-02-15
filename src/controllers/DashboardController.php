@@ -4,20 +4,18 @@ declare(strict_types=1);
 
 namespace App\controllers;
 
-use App\repositories\AnexoRepo;
-use App\repositories\ImportLogRepo;
+use App\services\WorkflowService;
 
 class DashboardController
 {
-    public function __construct(private ImportLogRepo $logRepo, private AnexoRepo $anexoRepo)
+    public function __construct(private WorkflowService $workflowService)
     {
     }
 
-    public function stats(int $projectId): array
+    public function stats(int $projectId, string $tipo): array
     {
         return [
-            'lastImport' => $this->logRepo->latest($projectId),
-            'counts' => $this->anexoRepo->countByProject($projectId),
+            'workflow' => $this->workflowService->status($projectId, $tipo),
         ];
     }
 }
