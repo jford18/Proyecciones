@@ -10,11 +10,11 @@ foreach ($excelTemplates as $template) {
 $selectedTemplate ??= $excelTemplates[0] ?? null;
 $result = ($excelExecutionResult && ($excelExecutionResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelExecutionResult : ((($excelValidationResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelValidationResult : null);
 $isIngresosTab = (($selectedTemplate['id'] ?? '') === 'ingresos');
-$details = $result['details'] ?? $result['errors'] ?? [];
+$details = is_array($result['details'] ?? null) ? $result['details'] : [];
 $warningRows = (int) ($result['counts']['warning_rows'] ?? 0);
 $errorRows = (int) ($result['counts']['error_rows'] ?? 0);
 $skipRows = (int) ($result['counts']['skipped_formula_rows'] ?? 0);
-$hasDetails = $isIngresosTab && ($warningRows > 0 || $errorRows > 0 || $skipRows > 0) && !empty($details);
+$detailsCount = count($details);
 ?>
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item active">Importar Excel</li></ol></nav>
 
@@ -69,8 +69,8 @@ $hasDetails = $isIngresosTab && ($warningRows > 0 || $errorRows > 0 || $skipRows
         <li>Omitidas: <strong><?= (int) $result['counts']['omitted_rows'] ?></strong></li>
       <?php endif; ?>
     </ul>
-    <?php if ($hasDetails): ?>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#ingresosDetailsModal">Ver detalles</button>
+    <?php if ($isIngresosTab): ?>
+      <button type="button" id="openIngresosDetails" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#ingresosDetailsModal" <?= $detailsCount === 0 ? 'disabled title="No hay detalles disponibles"' : '' ?>>Ver detalles</button>
     <?php endif; ?>
 
     <?php if ($isIngresosTab && $errorRows > 0): ?>
@@ -99,7 +99,7 @@ $hasDetails = $isIngresosTab && ($warningRows > 0 || $errorRows > 0 || $skipRows
 <?php endif; ?>
 
 
-<?php if ($hasDetails): ?>
+<?php if ($isIngresosTab && $result): ?>
 <div class="modal fade" id="ingresosDetailsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -114,6 +114,9 @@ $hasDetails = $isIngresosTab && ($warningRows > 0 || $errorRows > 0 || $skipRows
           <button type="button" class="btn btn-outline-warning details-filter" data-filter="WARNING">Warnings</button>
           <button type="button" class="btn btn-outline-primary details-filter" data-filter="SKIP">Omitidas por fórmula</button>
         </div>
+        <?php if ($detailsCount === 0): ?>
+          <div class="alert alert-secondary mb-0">No hay detalles disponibles.</div>
+        <?php else: ?>
         <div class="table-responsive">
           <table class="table table-sm table-striped">
             <thead><tr><th>Fila</th><th>Columna</th><th>Severidad</th><th>Mensaje</th><th>Valor</th></tr></thead>
@@ -133,17 +136,32 @@ $hasDetails = $isIngresosTab && ($warningRows > 0 || $errorRows > 0 || $skipRows
         <?php if (count($details) > 50): ?>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="showMoreDetails">Mostrar más</button>
         <?php endif; ?>
+        <?php endif; ?>
       </div>
     </div>
   </div>
 </div>
 <script>
   (function () {
+    const validationResult = {
+      summary: <?= json_encode($result['summary'] ?? null, JSON_UNESCAPED_UNICODE) ?>,
+      detailsCount: <?= (int) $detailsCount ?>,
+    };
+    console.log('[IMPORT_VALIDATE][INGRESOS] response:', validationResult);
+    console.log('[IMPORT_VALIDATE][INGRESOS] details length:', validationResult.detailsCount);
+
     const rows = Array.from(document.querySelectorAll('#ingresosDetailsBody .detail-row'));
     const filters = Array.from(document.querySelectorAll('.details-filter'));
     const showMoreBtn = document.getElementById('showMoreDetails');
     let visibleLimit = 50;
     let activeFilter = 'ALL';
+
+    const openDetailsBtn = document.getElementById('openIngresosDetails');
+    if (openDetailsBtn) {
+      openDetailsBtn.addEventListener('click', () => {
+        console.log('VER DETALLES click', validationResult.detailsCount);
+      });
+    }
 
     function refreshRows() {
       let shown = 0;
