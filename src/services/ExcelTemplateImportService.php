@@ -9,6 +9,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ExcelTemplateImportService
 {
+    private const SEVERITY_ERROR = 'ERROR';
+    private const SEVERITY_WARNING = 'WARNING';
+    private const SEVERITY_SKIP = 'SKIP';
+
     private const MONTH_COLUMNS = [
         4 => 'Enero',
         5 => 'Febrero',
@@ -26,21 +30,48 @@ class ExcelTemplateImportService
 
     public function validate(string $path, array $template): array
     {
-        $sheet = $this->loadTemplateSheet($path, $template['sheet_name']);
-        $errors = [];
+        $details = [];
+        try {
+            $sheet = $this->loadTemplateSheet($path, $template['sheet_name']);
+        } catch (\Throwable $e) {
+            $details[] = $this->buildDetail(1, 'A:P', self::SEVERITY_ERROR, 'INVALID_EXCEL', $e->getMessage());
 
-        $header = $this->readHeader($sheet);
-        if ($header !== ImportTemplateCatalog::FIXED_HEADER) {
-            $errors[] = [
-                'row' => 1,
-                'column' => 'A:P',
-                'message' => 'Header inválido. Debe coincidir exactamente con la plantilla oficial.',
-                'expected' => ImportTemplateCatalog::FIXED_HEADER,
-                'actual' => $header,
+            return [
+                'sheet_name' => $template['sheet_name'],
+                'template_id' => $template['id'],
+                'preview' => [],
+                'counts' => [
+                    'total_rows' => 0,
+                    'importable_rows' => 0,
+                    'importables' => 0,
+                    'skipped_formula_rows' => 0,
+                    'warning_rows' => 0,
+                    'error_rows' => 1,
+                ],
+                'details' => $details,
+                'errors' => $details,
             ];
         }
 
+        $headerValidation = $this->validateHeader($sheet);
+        if ($headerValidation !== []) {
+            $details = array_merge($details, $headerValidation);
+        }
+
         $parsed = $this->parseRows($sheet);
+        $details = array_merge($details, $parsed['details']);
+
+        $errorRows = 0;
+        $warningRows = 0;
+        foreach ($details as $detail) {
+            if (($detail['severity'] ?? '') === self::SEVERITY_ERROR) {
+                $errorRows++;
+                continue;
+            }
+            if (($detail['severity'] ?? '') === self::SEVERITY_WARNING) {
+                $warningRows++;
+            }
+        }
 
         return [
             'sheet_name' => $sheet->getTitle(),
@@ -49,16 +80,22 @@ class ExcelTemplateImportService
             'counts' => [
                 'total_rows' => $parsed['total_rows'],
                 'importable_rows' => count($parsed['importable_rows']),
+                'importables' => count($parsed['importable_rows']),
                 'skipped_formula_rows' => $parsed['skipped_formula_rows'],
-                'error_rows' => count($parsed['row_errors']),
+                'warning_rows' => $warningRows,
+                'error_rows' => $errorRows,
             ],
-            'errors' => array_merge($errors, $parsed['row_errors']),
+            'details' => $details,
+            'errors' => $details,
         ];
     }
 
     public function execute(string $path, array $template, string $user): array
     {
         $validation = $this->validate($path, $template);
+        if (($validation['counts']['error_rows'] ?? 0) > 0) {
+            throw new \RuntimeException('La validación contiene errores estructurales. Corrige el archivo antes de importar.');
+        }
         $rows = $this->parseRows($this->loadTemplateSheet($path, $template['sheet_name']))['importable_rows'];
 
         $storePath = dirname(__DIR__, 2) . '/var/import_store/' . $template['id'] . '.json';
@@ -101,9 +138,11 @@ class ExcelTemplateImportService
                 'imported_rows' => $inserted,
                 'updated_rows' => $updated,
                 'skipped_formula_rows' => $validation['counts']['skipped_formula_rows'],
+                'warning_rows' => $validation['counts']['warning_rows'] ?? 0,
                 'error_rows' => $validation['counts']['error_rows'],
                 'omitted_rows' => $validation['counts']['total_rows'] - ($inserted + $updated),
             ],
+            'details' => $validation['details'] ?? [],
             'errors' => $validation['errors'],
             'preview' => $validation['preview'],
         ];
@@ -114,7 +153,7 @@ class ExcelTemplateImportService
         $spreadsheet = IOFactory::load($path);
         $sheet = $spreadsheet->getSheetByName($sheetName);
         if (!$sheet instanceof Worksheet) {
-            throw new \RuntimeException("El Excel no contiene la hoja requerida: {$sheetName}");
+            throw new \RuntimeException("No existe la hoja requerida: {$sheetName}");
         }
 
         return $sheet;
@@ -130,11 +169,52 @@ class ExcelTemplateImportService
         return $header;
     }
 
+    private function validateHeader(Worksheet $sheet): array
+    {
+        $details = [];
+        $header = $this->readHeader($sheet);
+        $expected = ImportTemplateCatalog::FIXED_HEADER;
+
+        foreach ($expected as $index => $columnName) {
+            if (!isset($header[$index]) || $header[$index] !== $columnName) {
+                $details[] = $this->buildDetail(
+                    1,
+                    $this->columnLetter($index + 1),
+                    self::SEVERITY_ERROR,
+                    'HEADER_MISSING',
+                    "Header inválido en columna {$columnName}.",
+                    $header[$index] ?? null
+                );
+            }
+        }
+
+        $seen = [];
+        foreach ($header as $index => $name) {
+            if ($name === '') {
+                $details[] = $this->buildDetail(1, $this->columnLetter($index + 1), self::SEVERITY_ERROR, 'HEADER_CORRUPT', 'Header vacío o corrupto.');
+                continue;
+            }
+            $normalized = mb_strtolower($name);
+            if (isset($seen[$normalized])) {
+                $details[] = $this->buildDetail(
+                    1,
+                    $this->columnLetter($index + 1),
+                    self::SEVERITY_ERROR,
+                    'HEADER_DUPLICATE',
+                    "Columna duplicada en header: {$name}."
+                );
+            }
+            $seen[$normalized] = true;
+        }
+
+        return $details;
+    }
+
     private function parseRows(Worksheet $sheet): array
     {
         $highest = $sheet->getHighestDataRow();
         $importable = [];
-        $errors = [];
+        $details = [];
         $skippedFormulaRows = 0;
         $totalRows = 0;
 
@@ -152,16 +232,29 @@ class ExcelTemplateImportService
                     $hasFormula = true;
                     break;
                 }
+
+                if (!$this->isBlank($raw) && !$this->isNumericValue($raw)) {
+                    $details[] = $this->buildDetail(
+                        $row,
+                        $this->columnLetter($col),
+                        self::SEVERITY_WARNING,
+                        'NON_NUMERIC_VALUE',
+                        'Texto no numérico en mes; se tomará como 0.',
+                        is_scalar($raw) ? (string) $raw : null
+                    );
+                }
+
                 $monthValues[$col] = $this->toFloat($raw);
             }
 
             if ($hasFormula) {
                 $skippedFormulaRows++;
+                $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_SKIP, 'FORMULA_ROW', 'Fila omitida por fórmulas en columnas de meses.');
                 continue;
             }
 
             if ($codigo === '') {
-                $errors[] = ['row' => $row, 'column' => 'B', 'message' => 'CODIGO vacío'];
+                $details[] = $this->buildDetail($row, 'B', self::SEVERITY_WARNING, 'EMPTY_CODE', 'Fila sin CODIGO (posible encabezado/grupo).');
                 continue;
             }
 
@@ -173,12 +266,12 @@ class ExcelTemplateImportService
                 }
             }
             if (!$hasNumeric) {
-                $errors[] = ['row' => $row, 'column' => 'D:O', 'message' => 'No hay valores numéricos en meses'];
+                $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_WARNING, 'NO_NUMERIC_MONTHS', 'No hay valores numéricos en meses.');
                 continue;
             }
 
             if ($periodo < 1900 || $periodo > 3000) {
-                $errors[] = ['row' => $row, 'column' => 'A', 'message' => 'PERIODO inválido (debe ser YYYY)'];
+                $details[] = $this->buildDetail($row, 'A', self::SEVERITY_WARNING, 'INVALID_PERIOD', 'PERIODO inválido (debe ser YYYY).');
                 continue;
             }
 
@@ -200,9 +293,65 @@ class ExcelTemplateImportService
         return [
             'total_rows' => $totalRows,
             'importable_rows' => $importable,
-            'row_errors' => $errors,
+            'details' => $details,
             'skipped_formula_rows' => $skippedFormulaRows,
         ];
+    }
+
+    private function isBlank(mixed $value): bool
+    {
+        return $value === null || trim((string) $value) === '';
+    }
+
+    private function isNumericValue(mixed $value): bool
+    {
+        if (is_int($value) || is_float($value)) {
+            return true;
+        }
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return false;
+        }
+
+        $normalized = str_replace([' ', '$'], '', $normalized);
+        if (preg_match('/^-?\d{1,3}(\.\d{3})+,\d+$/', $normalized) === 1) {
+            return true;
+        }
+        if (str_contains($normalized, ',') && !str_contains($normalized, '.')) {
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '', $normalized);
+        }
+
+        return is_numeric($normalized);
+    }
+
+    private function columnLetter(int $index): string
+    {
+        $letter = '';
+        while ($index > 0) {
+            $remainder = ($index - 1) % 26;
+            $letter = chr(65 + $remainder) . $letter;
+            $index = intdiv($index - 1, 26);
+        }
+
+        return $letter;
+    }
+
+    private function buildDetail(int $rowNum, string $column, string $severity, string $code, string $message, ?string $rawValue = null): array
+    {
+        $detail = [
+            'row_num' => $rowNum,
+            'column' => $column,
+            'severity' => $severity,
+            'code' => $code,
+            'message' => $message,
+        ];
+        if ($rawValue !== null) {
+            $detail['raw_value'] = $rawValue;
+        }
+
+        return $detail;
     }
 
     private function normalizeCode(string $value): string
