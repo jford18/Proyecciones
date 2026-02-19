@@ -10,6 +10,7 @@ $sections = [
         'import-nomina' => ['PASO 1.2 NÓMINA', 'bi-people'],
         'import-cobranza' => ['PASO 1.3 COBRANZA', 'bi-wallet2'],
         'import-activos' => ['PASO 1.4 ACTIVOS', 'bi-building'],
+        'import-excel' => ['Importar Excel (7 pestañas)', 'bi-file-earmark-spreadsheet'],
         'consolidar-pg' => ['PASO 2 Consolidar PG', 'bi-diagram-3'],
         'generar-flujo' => ['PASO 3 Generar FLUJO', 'bi-calculator'],
     ]],

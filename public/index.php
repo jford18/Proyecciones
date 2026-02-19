@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\controllers\AnexoController;
 use App\controllers\DashboardController;
+use App\controllers\ExcelImportController;
 use App\controllers\ImportController;
 use App\db\Db;
 use App\repositories\AnexoRepo;
@@ -12,6 +13,8 @@ use App\repositories\ImportLogRepo;
 use App\repositories\ProyectoRepo;
 use App\services\ExcelAnexoImportService;
 use App\services\FlujoGeneratorService;
+use App\services\ImportTemplateCatalog;
+use App\services\ExcelTemplateImportService;
 use App\services\PgConsolidationService;
 use App\services\WorkflowService;
 
@@ -29,6 +32,7 @@ $pgService = new PgConsolidationService($anexoRepo, __DIR__ . '/../var/cache', $
 $workflowService = new WorkflowService($anexoRepo, $logRepo, $pgService);
 $flujoService = new FlujoGeneratorService($flujoRepo, $pgMap);
 $importController = new ImportController(new ExcelAnexoImportService(), $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
+$excelImportController = new ExcelImportController(new ExcelTemplateImportService(), new ImportTemplateCatalog(), $config['upload_dir']);
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($workflowService);
 
@@ -40,6 +44,39 @@ if ($projectOptions === []) {
 $firstProjectId = isset($projectOptions[0]['ID']) ? (int) $projectOptions[0]['ID'] : 0;
 $activeProjectId = (int) ($_SESSION['active_project_id'] ?? $firstProjectId);
 $activeTipo = in_array(($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO'), ['PRESUPUESTO', 'REAL'], true) ? (string) ($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO') : 'PRESUPUESTO';
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
+if (str_starts_with($path, '/import/')) {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if ($path === '/import/templates' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+            echo json_encode($excelImportController->templates(), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($path === '/import/validate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            $user = (string) ($_SESSION['user'] ?? 'local-user');
+            echo json_encode($excelImportController->validate($_POST, $_FILES, $user), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($path === '/import/execute' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            $user = (string) ($_SESSION['user'] ?? 'local-user');
+            echo json_encode($excelImportController->execute($_POST, $_FILES, $user), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($path === '/import/logs' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+            echo json_encode($excelImportController->logs((int) ($_GET['limit'] ?? 50)), JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        http_response_code(404);
+        echo json_encode(['error' => 'Endpoint no encontrado'], JSON_UNESCAPED_UNICODE);
+        exit;
+    } catch (Throwable $e) {
+        http_response_code(422);
+        echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $_SESSION['active_tipo'] = $activeTipo;
 
 $route = $_GET['r'] ?? 'dashboard';
@@ -65,6 +102,21 @@ try {
         $_SESSION['import_result'] = $result;
         $_SESSION['flash'] = ['type' => 'success', 'text' => $result['message']];
         redirectTo($route, ['tipo' => $activeTipo]);
+    }
+
+    if ($route === 'import-excel' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = (string) ($_POST['action'] ?? 'validate');
+        $user = (string) ($_SESSION['user'] ?? 'local-user');
+        if ($action === 'validate') {
+            $result = $excelImportController->validate($_POST, $_FILES, $user);
+            $_SESSION['excel_validation_result'] = $result;
+            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Validación completada correctamente.'];
+        } else {
+            $result = $excelImportController->execute($_POST, $_FILES, $user);
+            $_SESSION['excel_execution_result'] = $result;
+            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Importación completada.'];
+        }
+        redirectTo('import-excel', ['tipo' => $activeTipo]);
     }
 
     if ($route === 'consolidar-pg' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -113,6 +165,13 @@ switch ($route) {
     case 'dashboard':
         $viewData['stats'] = $dashboardController->stats($activeProjectId, $activeTipo);
         $contentView = __DIR__ . '/../src/views/dashboard.php';
+        break;
+    case 'import-excel':
+        $viewData['excelTemplates'] = $excelImportController->templates()['templates'];
+        $viewData['excelValidationResult'] = $_SESSION['excel_validation_result'] ?? null;
+        $viewData['excelExecutionResult'] = $_SESSION['excel_execution_result'] ?? null;
+        unset($_SESSION['excel_validation_result'], $_SESSION['excel_execution_result']);
+        $contentView = __DIR__ . '/../src/views/import_excel.php';
         break;
     case 'import-gastos': case 'import-nomina': case 'import-cobranza': case 'import-activos':
         $labels = ['import-gastos' => ['GASTOS', '1.1'], 'import-nomina' => ['NOMINA', '1.2'], 'import-cobranza' => ['COBRANZA', '1.3'], 'import-activos' => ['ACTIVOS', '1.4']];
