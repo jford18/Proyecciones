@@ -28,8 +28,32 @@ class ExcelImportController
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
         $result = $this->service->validate($uploaded['path'], $template);
+
+        $summary = $result['summary'] ?? [
+            'total_rows' => (int) ($result['counts']['total_rows'] ?? 0),
+            'importables' => (int) ($result['counts']['importables'] ?? $result['counts']['importable_rows'] ?? 0),
+            'skipped_formula_rows' => (int) ($result['counts']['skipped_formula_rows'] ?? 0),
+            'warning_rows' => (int) ($result['counts']['warning_rows'] ?? 0),
+            'error_rows' => (int) ($result['counts']['error_rows'] ?? 0),
+        ];
+
+        $result['summary'] = $summary;
+        $result['details'] = is_array($result['details'] ?? null) ? $result['details'] : [];
+        $result['counts'] = array_merge($result['counts'] ?? [], [
+            'total_rows' => $summary['total_rows'],
+            'importables' => $summary['importables'],
+            'importable_rows' => (int) ($result['counts']['importable_rows'] ?? $summary['importables']),
+            'skipped_formula_rows' => $summary['skipped_formula_rows'],
+            'warning_rows' => $summary['warning_rows'],
+            'error_rows' => $summary['error_rows'],
+        ]);
         $result['file_name'] = $uploaded['originalName'];
         $result['user'] = $user;
+
+        if (($template['id'] ?? '') === 'ingresos') {
+            error_log('[IMPORT_VALIDATE][INGRESOS] summary: ' . json_encode($summary, JSON_UNESCAPED_UNICODE));
+            error_log('[IMPORT_VALIDATE][INGRESOS] details length: ' . count($result['details']));
+        }
 
         return $result;
     }

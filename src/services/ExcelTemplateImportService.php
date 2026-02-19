@@ -36,18 +36,20 @@ class ExcelTemplateImportService
         } catch (\Throwable $e) {
             $details[] = $this->buildDetail(1, 'A:P', self::SEVERITY_ERROR, 'INVALID_EXCEL', $e->getMessage());
 
+            $summary = [
+                'total_rows' => 0,
+                'importables' => 0,
+                'skipped_formula_rows' => 0,
+                'warning_rows' => 0,
+                'error_rows' => 1,
+            ];
+
             return [
                 'sheet_name' => $template['sheet_name'],
                 'template_id' => $template['id'],
                 'preview' => [],
-                'counts' => [
-                    'total_rows' => 0,
-                    'importable_rows' => 0,
-                    'importables' => 0,
-                    'skipped_formula_rows' => 0,
-                    'warning_rows' => 0,
-                    'error_rows' => 1,
-                ],
+                'summary' => $summary,
+                'counts' => $summary + ['importable_rows' => 0],
                 'details' => $details,
                 'errors' => $details,
             ];
@@ -73,18 +75,20 @@ class ExcelTemplateImportService
             }
         }
 
+        $summary = [
+            'total_rows' => $parsed['total_rows'],
+            'importables' => count($parsed['importable_rows']),
+            'skipped_formula_rows' => $parsed['skipped_formula_rows'],
+            'warning_rows' => $warningRows,
+            'error_rows' => $errorRows,
+        ];
+
         return [
             'sheet_name' => $sheet->getTitle(),
             'template_id' => $template['id'],
             'preview' => array_slice($parsed['importable_rows'], 0, 20),
-            'counts' => [
-                'total_rows' => $parsed['total_rows'],
-                'importable_rows' => count($parsed['importable_rows']),
-                'importables' => count($parsed['importable_rows']),
-                'skipped_formula_rows' => $parsed['skipped_formula_rows'],
-                'warning_rows' => $warningRows,
-                'error_rows' => $errorRows,
-            ],
+            'summary' => $summary,
+            'counts' => $summary + ['importable_rows' => $summary['importables']],
             'details' => $details,
             'errors' => $details,
         ];
@@ -340,18 +344,14 @@ class ExcelTemplateImportService
 
     private function buildDetail(int $rowNum, string $column, string $severity, string $code, string $message, ?string $rawValue = null): array
     {
-        $detail = [
+        return [
             'row_num' => $rowNum,
-            'column' => $column,
+            'column' => $column !== '' ? $column : null,
             'severity' => $severity,
             'code' => $code,
             'message' => $message,
+            'raw_value' => $rawValue,
         ];
-        if ($rawValue !== null) {
-            $detail['raw_value'] = $rawValue;
-        }
-
-        return $detail;
     }
 
     private function normalizeCode(string $value): string
