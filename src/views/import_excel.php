@@ -152,7 +152,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     }
 
     async function callImport(action, mode) {
-      const endpointUrl = `?r=${encodeURIComponent(`import-excel/${action}`)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
+      const endpointUrl = `?r=import-excel&action=${encodeURIComponent(action)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
       try {
         const fd = buildFormData();
         const response = await fetch(endpointUrl, {
@@ -165,6 +165,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         if (contentType.includes('application/json')) {
           payload = rawBody ? JSON.parse(rawBody) : {};
         } else {
+          console.error(`[IMPORT_${mode.toUpperCase()}][${tab.toUpperCase()}] non-json response:`, rawBody);
           const snippet = String(rawBody || '').slice(0, 140).replace(/\s+/g, ' ').trim();
           throw new Error(`Endpoint devolvió HTML o texto no JSON (HTTP ${response.status}). URL: ${endpointUrl}. Body: ${snippet || '[vacío]'}`);
         }
