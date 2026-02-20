@@ -189,14 +189,19 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       `;
 
 
-      if (viewExcelBtn && downloadExcelBtn && ['ingresos', 'costos'].includes(tab)) {
+      if (viewExcelBtn && downloadExcelBtn) {
         const selectedAnio = payload.anio ?? payload?.preview?.[0]?.periodo ?? '';
+        const hasExcelPreview = Boolean(
+          (payload.json_path && String(payload.json_path).trim() !== '')
+          || (payload.file_name && payload.sheet_name)
+          || Number(payload?.counts?.total_rows ?? 0) > 0
+        );
         const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
         const base = `?r=import-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}${queryAnio}`;
-        viewExcelBtn.href = `${base}&action=view_excel`;
+        viewExcelBtn.href = `${base}&action=view-excel&_t=${Date.now()}`;
         downloadExcelBtn.href = `${base}&action=export_xlsx`;
         viewExcelBtn.dataset.anio = String(selectedAnio || '');
-        viewExcelBtn.style.display = '';
+        viewExcelBtn.style.display = hasExcelPreview ? '' : 'none';
         downloadExcelBtn.style.display = '';
       }
 
@@ -348,7 +353,11 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     if (viewExcelBtn) {
       viewExcelBtn.addEventListener('click', (event) => {
         event.preventDefault();
-        openExcelGridPreview();
+        const href = viewExcelBtn.getAttribute('href') || '';
+        if (!href) {
+          return;
+        }
+        window.open(href, '_blank', 'noopener');
       });
     }
 
