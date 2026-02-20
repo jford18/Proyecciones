@@ -88,6 +88,7 @@ class PresupuestoIngresosRepository
         $valuesSql = implode(', ', array_map(static fn (string $param): string => ':' . $param, array_values($insertColumns)));
         $updateSql = $updateSqlParts === [] ? '' : ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateSqlParts);
         $upsertStmt = $this->pdo->prepare("INSERT INTO PRESUPUESTO_INGRESOS ({$columnSql}) VALUES ({$valuesSql}){$updateSql}");
+        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
 
         $this->pdo->beginTransaction();
 
@@ -118,12 +119,18 @@ class PresupuestoIngresosRepository
                     'usuario_carga' => $usuario,
                 ];
 
+                $existsStmt->execute([
+                    'tipo' => $tipo,
+                    'anio' => (int) ($row['anio'] ?? 0),
+                    'codigo' => $codigo,
+                ]);
+                $alreadyExists = $existsStmt->fetchColumn() !== false;
+
                 $upsertStmt->execute($payload);
-                $affected = (int) $upsertStmt->rowCount();
-                if ($affected === 1) {
-                    $inserted++;
-                } elseif ($affected === 2) {
+                if ($alreadyExists) {
                     $updated++;
+                } else {
+                    $inserted++;
                 }
             }
 
@@ -174,13 +181,14 @@ class PresupuestoIngresosRepository
 
         $sheetName = (string) ($payload['sheet_name'] ?? '');
         $fileName = (string) ($payload['file_name'] ?? '');
+        $archivoNombre = (string) ($payload['archivo_nombre'] ?? $fileName);
 
         $stmt->execute([
             'tab' => (string) ($payload['tab'] ?? 'ingresos'),
             'tipo' => (string) ($payload['tipo'] ?? ''),
             'hoja_nombre' => $sheetName,
             'sheet_name' => $sheetName,
-            'archivo_nombre' => $fileName,
+            'archivo_nombre' => $archivoNombre,
             'file_name' => $fileName,
             'total_rows' => (int) ($payload['counts']['total_rows'] ?? 0),
             'inserted_count' => (int) ($payload['inserted_count'] ?? 0),

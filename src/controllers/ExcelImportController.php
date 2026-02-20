@@ -47,6 +47,11 @@ class ExcelImportController
             exit;
         }
 
+        if ($action === 'preview_grid') {
+            $this->previewGridJson($user);
+            exit;
+        }
+
         if ($action === 'data_excel') {
             $this->ingresosGridJson();
             exit;
@@ -424,6 +429,38 @@ class ExcelImportController
         }
     }
 
+    private function previewGridJson(string $user): never
+    {
+        $this->prepareJsonRequest();
+
+        if ((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->respondJson(['ok' => false, 'message' => 'Método no permitido. Use POST.'], 400);
+        }
+
+        try {
+            $template = $this->resolveTemplate($_POST);
+            if (($template['id'] ?? '') !== 'ingresos' || !$this->ingresosService instanceof ExcelIngresosImportService) {
+                $this->respondJson(['ok' => false, 'message' => 'Preview solo soportado para ingresos.'], 400);
+            }
+
+            $uploaded = $this->saveUploadedExcel($_FILES);
+            $response = $this->ingresosService->previewGrid(
+                $uploaded['path'],
+                (string) ($_POST['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
+                $this->resolveAnioRequest($_POST),
+                $uploaded['originalName']
+            );
+            $response['user'] = $user;
+            $this->respondJson($response);
+        } catch (\Throwable $e) {
+            $payload = $this->buildJsonErrorPayload($e);
+            if ($this->isLocalDebug()) {
+                $payload['debug'] = $e->getTraceAsString();
+            }
+            $this->respondJson($payload, 500);
+        }
+    }
+
     private function buildJsonErrorPayload(\Throwable $e): array
     {
         $details = [];
@@ -472,7 +509,12 @@ class ExcelImportController
     {
         @set_time_limit(300);
         @ini_set('memory_limit', '512M');
+        @ini_set('display_errors', '0');
         ignore_user_abort(true);
+
+        set_error_handler(function (int $severity, string $message, string $file, int $line): bool {
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
     }
 
     private function logImport(string $msg): void
