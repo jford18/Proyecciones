@@ -191,10 +191,12 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 
       if (viewExcelBtn && downloadExcelBtn) {
         const selectedAnio = payload.anio ?? payload?.preview?.[0]?.periodo ?? '';
+        const hasRowsInPreview = Array.isArray(payload.preview) && payload.preview.length > 0;
+        const hasMutations = Number(payload.inserted_count ?? 0) > 0 || Number(payload.updated_count ?? 0) > 0;
         const hasExcelPreview = Boolean(
-          (payload.json_path && String(payload.json_path).trim() !== '')
-          || (payload.file_name && payload.sheet_name)
-          || Number(payload?.counts?.total_rows ?? 0) > 0
+          payload.ok === true
+          && (payload.json_path && String(payload.json_path).trim() !== '')
+          && (hasRowsInPreview || hasMutations)
         );
         const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
         const base = `?r=import-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}${queryAnio}`;

@@ -12,6 +12,7 @@ class PresupuestoIngresosRepository
     private ?array $presupuestoIngresosColumns = null;
     private ?array $presupuestoCostosColumns = null;
     private ?array $presupuestoOtrosIngresosColumns = null;
+    private ?array $presupuestoOtrosEgresosColumns = null;
     private ?array $presupuestoGastosOperacionalesColumns = null;
     private ?array $presupuestoGastosFinancierosColumns = null;
 
@@ -32,6 +33,11 @@ class PresupuestoIngresosRepository
     public function upsertOtrosIngresosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         return $this->upsertRowsByTab('otros_ingresos', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertOtrosEgresosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
+        return $this->upsertRowsByTab('otros_egresos', $tipo, $sheetName, $fileName, $usuario, $rows);
     }
 
     public function upsertGastosOperacionalesRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
@@ -251,6 +257,11 @@ class PresupuestoIngresosRepository
         return $this->findFirstAnioByTipoByTab('gastos_operacionales', $tipo);
     }
 
+    public function findFirstAnioByTipoOtrosEgresos(string $tipo): ?int
+    {
+        return $this->findFirstAnioByTipoByTab('otros_egresos', $tipo);
+    }
+
     public function findFirstAnioByTipoGastosFinancieros(string $tipo): ?int
     {
         return $this->findFirstAnioByTipoByTab('gastos_financieros', $tipo);
@@ -288,6 +299,11 @@ class PresupuestoIngresosRepository
     public function fetchGastosOperacionalesRowsForGrid(string $tipo, int $anio): array
     {
         return $this->fetchRowsForGridByTab('gastos_operacionales', $tipo, $anio);
+    }
+
+    public function fetchOtrosEgresosRowsForGrid(string $tipo, int $anio): array
+    {
+        return $this->fetchRowsForGridByTab('otros_egresos', $tipo, $anio);
     }
 
     public function fetchGastosFinancierosRowsForGrid(string $tipo, int $anio): array
@@ -385,6 +401,9 @@ class PresupuestoIngresosRepository
         if ($tab === 'otros_ingresos' && $this->presupuestoOtrosIngresosColumns !== null) {
             return $this->presupuestoOtrosIngresosColumns;
         }
+        if ($tab === 'otros_egresos' && $this->presupuestoOtrosEgresosColumns !== null) {
+            return $this->presupuestoOtrosEgresosColumns;
+        }
         if ($tab === 'gastos_operacionales' && $this->presupuestoGastosOperacionalesColumns !== null) {
             return $this->presupuestoGastosOperacionalesColumns;
         }
@@ -425,6 +444,11 @@ class PresupuestoIngresosRepository
             return $this->presupuestoOtrosIngresosColumns;
         }
 
+        if ($tab === 'otros_egresos') {
+            $this->presupuestoOtrosEgresosColumns = $columns;
+            return $this->presupuestoOtrosEgresosColumns;
+        }
+
         if ($tab === 'gastos_financieros') {
             $this->presupuestoGastosFinancierosColumns = $columns;
             return $this->presupuestoGastosFinancierosColumns;
@@ -439,6 +463,7 @@ class PresupuestoIngresosRepository
         return match (strtolower($tab)) {
             'costos' => 'PRESUPUESTO_COSTOS',
             'otros_ingresos' => 'PRESUPUESTO_OTROS_INGRESOS',
+            'otros_egresos' => 'PRESUPUESTO_OTROS_EGRESOS',
             'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
             'gastos_financieros' => 'PRESUPUESTO_GASTOS_FINANCIEROS',
             default => 'PRESUPUESTO_INGRESOS',
