@@ -10,6 +10,7 @@ use App\services\ImportTemplateCatalog;
 class ExcelImportController
 {
     private const MAX_UPLOAD_BYTES = 10_485_760;
+    private const IMPORT_LOG_FILE = '/var/log/import_excel.log';
 
     public function __construct(
         private ExcelTemplateImportService $service,
@@ -25,18 +26,19 @@ class ExcelImportController
 
     public function handleActionRequest(?string $action, string $user): bool
     {
+        $action = isset($_GET['action']) ? (string) $_GET['action'] : $action;
         if ($action === null || $action === '') {
             return false;
         }
 
         if ($action === 'validate') {
             $this->validateJson($user);
-            return true;
+            exit;
         }
 
         if ($action === 'execute') {
             $this->executeJson($user);
-            return true;
+            exit;
         }
 
         $this->respondJson([
@@ -92,6 +94,10 @@ class ExcelImportController
             'preview' => $result['preview'],
             'counts' => $result['counts'],
             'errors' => $result['errors'],
+            'processed_rows' => (int) ($result['processed_rows'] ?? 0),
+            'highest_row' => (int) ($result['highest_row'] ?? 0),
+            'max_rows' => (int) ($result['max_rows'] ?? 5000),
+            'rows_limit_exceeded' => (bool) ($result['rows_limit_exceeded'] ?? false),
             'user' => $result['user'],
         ];
     }
@@ -113,6 +119,10 @@ class ExcelImportController
             'updated_count' => (int) ($result['counts']['updated_rows'] ?? 0),
             'skipped_count' => (int) ($result['counts']['omitted_rows'] ?? 0),
             'warning_count' => (int) ($result['counts']['warning_rows'] ?? 0),
+            'processed_rows' => (int) ($result['processed_rows'] ?? ($result['counts']['processed_rows'] ?? 0)),
+            'highest_row' => (int) ($result['highest_row'] ?? ($result['counts']['highest_row'] ?? 0)),
+            'max_rows' => (int) ($result['max_rows'] ?? ($result['counts']['max_rows'] ?? 5000)),
+            'rows_limit_exceeded' => (bool) ($result['rows_limit_exceeded'] ?? false),
             'counts' => $result['counts'],
             'details' => $result['details'] ?? [],
             'preview' => $result['preview'] ?? [],
@@ -161,30 +171,112 @@ class ExcelImportController
 
     private function validateJson(string $user): never
     {
+        $this->prepareJsonRequest();
+        $this->logImport('VALIDATE START tab=' . (string) ($_GET['tab'] ?? '') . ' tipo=' . (string) ($_GET['tipo'] ?? 'PRESUPUESTO'));
+        $this->logImport('GET: ' . json_encode($_GET, JSON_UNESCAPED_UNICODE));
+        $this->logImport('POST: ' . json_encode($_POST, JSON_UNESCAPED_UNICODE));
+        $this->logImport('FILES: ' . json_encode(array_keys($_FILES), JSON_UNESCAPED_UNICODE));
+
         if ((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->logImport('VALIDATE END ok=false status=400 reason=method_not_allowed');
             $this->respondJson(['ok' => false, 'message' => 'Método no permitido. Use POST.'], 400);
         }
 
         try {
-            $this->respondJson($this->validate($_POST, $_FILES, $user));
+            $response = $this->validate($_POST, $_FILES, $user);
+            $this->logImport('VALIDATE END ok=true total_rows=' . (int) ($response['counts']['total_rows'] ?? 0));
+            $this->respondJson($response);
         } catch (\RuntimeException $e) {
+            $this->logImport('VALIDATE END ok=false status=400 error=' . $e->getMessage());
             $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
         } catch (\Throwable $e) {
+            $this->logImport('VALIDATE END ok=false status=500 error=' . $e->getMessage());
             $this->respondJson(['ok' => false, 'message' => 'Error interno al validar archivo.'], 500);
         }
     }
 
     private function executeJson(string $user): never
     {
+        $this->prepareJsonRequest();
+        $this->logImport('EXECUTE START tab=' . (string) ($_GET['tab'] ?? '') . ' tipo=' . (string) ($_GET['tipo'] ?? 'PRESUPUESTO'));
+        $this->logImport('GET: ' . json_encode($_GET, JSON_UNESCAPED_UNICODE));
+        $this->logImport('POST: ' . json_encode($_POST, JSON_UNESCAPED_UNICODE));
+        $this->logImport('FILES: ' . json_encode(array_keys($_FILES), JSON_UNESCAPED_UNICODE));
+
         if ((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->logImport('EXECUTE END ok=false status=400 reason=method_not_allowed');
             $this->respondJson(['ok' => false, 'message' => 'Método no permitido. Use POST.'], 400);
         }
 
+        if ($_FILES === []) {
+            $this->logImport('EXECUTE END ok=false status=400 reason=files_empty');
+            $this->respondJson([
+                'ok' => false,
+                'message' => 'No se recibió archivo (multipart). Revisar nombre del input y FormData.',
+            ], 400);
+        }
+
+        if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
+            $this->logImport('EXECUTE END ok=false status=400 reason=file_field_missing available=' . json_encode(array_keys($_FILES), JSON_UNESCAPED_UNICODE));
+            $this->respondJson([
+                'ok' => false,
+                'message' => 'No se encontró el campo "file" en la subida.',
+            ], 400);
+        }
+
+        $fileError = (int) ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($fileError !== UPLOAD_ERR_OK) {
+            $this->logImport('EXECUTE END ok=false status=400 reason=upload_error code=' . $fileError);
+            $this->respondJson([
+                'ok' => false,
+                'message' => 'Error al subir archivo.',
+                'upload_error_code' => $fileError,
+            ], 400);
+        }
+
+        $this->logImport('UPLOAD META name=' . (string) ($_FILES['file']['name'] ?? '') . ' size=' . (int) ($_FILES['file']['size'] ?? 0) . ' tmp=' . (string) ($_FILES['file']['tmp_name'] ?? ''));
+
         try {
-            $this->respondJson($this->execute($_POST, $_FILES, $user));
+            $response = $this->execute($_POST, $_FILES, $user);
+            $inserted = (int) ($response['inserted_count'] ?? 0);
+            $updated = (int) ($response['updated_count'] ?? 0);
+            $skipped = (int) ($response['skipped_count'] ?? 0);
+            $warnings = (int) ($response['warning_count'] ?? 0);
+            $processedRows = (int) ($response['processed_rows'] ?? 0);
+            $highestRow = (int) ($response['highest_row'] ?? 0);
+            $maxRows = (int) ($response['max_rows'] ?? 0);
+
+            if (($response['rows_limit_exceeded'] ?? false) === true) {
+                $this->logImport('EXECUTE END ok=false status=400 reason=rows_limit highest=' . $highestRow . ' max=' . $maxRows);
+                $this->respondJson([
+                    'ok' => false,
+                    'message' => 'Demasiadas filas, revisar plantilla',
+                    'inserted_count' => $inserted,
+                    'updated_count' => $updated,
+                    'skipped_count' => $skipped,
+                    'warning_count' => $warnings,
+                    'processed_rows' => $processedRows,
+                    'highest_row' => $highestRow,
+                    'max_rows' => $maxRows,
+                ], 400);
+            }
+
+            if (($inserted + $updated) === 0 && $skipped <= 0) {
+                $this->logImport('EXECUTE END ok=false status=400 inserted=0 updated=0 skipped=0 warnings=' . $warnings . ' processed=' . $processedRows);
+                $this->respondJson(array_merge($response, [
+                    'ok' => false,
+                    'message' => 'No se procesaron filas válidas en el archivo.',
+                ]), 400);
+            }
+
+            $response['ok'] = true;
+            $this->logImport('EXECUTE END ok=true inserted=' . $inserted . ' updated=' . $updated . ' skipped=' . $skipped . ' warnings=' . $warnings . ' highest=' . $highestRow . ' processed=' . $processedRows);
+            $this->respondJson($response);
         } catch (\RuntimeException $e) {
+            $this->logImport('EXECUTE END ok=false status=400 error=' . $e->getMessage());
             $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
         } catch (\Throwable $e) {
+            $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
             $this->respondJson(['ok' => false, 'message' => 'Error interno al importar archivo.'], 500);
         }
     }
@@ -192,9 +284,28 @@ class ExcelImportController
     private function respondJson(array $payload, int $status = 200): never
     {
         header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
         http_response_code($status);
         echo json_encode($payload, JSON_UNESCAPED_UNICODE);
         exit;
+    }
+
+    private function prepareJsonRequest(): void
+    {
+        @set_time_limit(300);
+        @ini_set('memory_limit', '512M');
+        ignore_user_abort(true);
+    }
+
+    private function logImport(string $msg): void
+    {
+        $file = dirname(__DIR__, 2) . self::IMPORT_LOG_FILE;
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        $line = '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL;
+        file_put_contents($file, $line, FILE_APPEND);
     }
 
     private function resolveTemplate(array $post): array
