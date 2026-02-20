@@ -282,19 +282,46 @@ class ExcelImportController
             $this->respondJson($response);
         } catch (\RuntimeException $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $payload = ['ok' => false, 'message' => $e->getMessage()];
+            $payload = $this->buildJsonErrorPayload($e);
             if ($this->isLocalDebug()) {
                 $payload['debug'] = $e->getTraceAsString();
             }
             $this->respondJson($payload, 500);
         } catch (\Throwable $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $payload = ['ok' => false, 'message' => $e->getMessage()];
+            $payload = $this->buildJsonErrorPayload($e);
             if ($this->isLocalDebug()) {
                 $payload['debug'] = $e->getTraceAsString();
             }
             $this->respondJson($payload, 500);
         }
+    }
+
+    private function buildJsonErrorPayload(\Throwable $e): array
+    {
+        $details = [];
+        $sqlState = method_exists($e, 'getCode') ? (string) $e->getCode() : '';
+        if ($sqlState !== '') {
+            $details[] = 'sql_state: ' . $sqlState;
+        }
+
+        if ($e instanceof \PDOException && isset($e->errorInfo) && is_array($e->errorInfo)) {
+            foreach ($e->errorInfo as $info) {
+                if ($info !== null && $info !== '') {
+                    $details[] = (string) $info;
+                }
+            }
+        }
+
+        if ($details === []) {
+            $details[] = $e->getMessage();
+        }
+
+        return [
+            'ok' => false,
+            'message' => $e->getMessage(),
+            'details' => array_values(array_unique($details)),
+        ];
     }
 
     private function isLocalDebug(): bool
