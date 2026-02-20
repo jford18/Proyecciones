@@ -37,7 +37,136 @@ class PresupuestoIngresosRepository
 
     public function upsertOtrosEgresosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
-        return $this->upsertRowsByTab('otros_egresos', $tipo, $sheetName, $fileName, $usuario, $rows);
+        if ($rows === []) {
+            return ['inserted_count' => 0, 'updated_count' => 0];
+        }
+
+        $inserted = 0;
+        $updated = 0;
+
+        $sql = 'INSERT INTO PRESUPUESTO_OTROS_EGRESOS (
+            TIPO,
+            ANIO,
+            PERIODO,
+            CODIGO,
+            NOMBRE_CUENTA,
+            ENE,
+            FEB,
+            MAR,
+            ABR,
+            MAY,
+            JUN,
+            JUL,
+            AGO,
+            SEP,
+            OCT,
+            NOV,
+            DIC,
+            TOTAL_RECALCULADO,
+            ARCHIVO_NOMBRE,
+            HOJA_NOMBRE,
+            USUARIO_CARGA
+        ) VALUES (
+            :TIPO,
+            :ANIO,
+            :PERIODO,
+            :CODIGO,
+            :NOMBRE_CUENTA,
+            :ENE,
+            :FEB,
+            :MAR,
+            :ABR,
+            :MAY,
+            :JUN,
+            :JUL,
+            :AGO,
+            :SEP,
+            :OCT,
+            :NOV,
+            :DIC,
+            :TOTAL_RECALCULADO,
+            :ARCHIVO_NOMBRE,
+            :HOJA_NOMBRE,
+            :USUARIO_CARGA
+        )
+        ON DUPLICATE KEY UPDATE
+            NOMBRE_CUENTA = VALUES(NOMBRE_CUENTA),
+            ENE = VALUES(ENE),
+            FEB = VALUES(FEB),
+            MAR = VALUES(MAR),
+            ABR = VALUES(ABR),
+            MAY = VALUES(MAY),
+            JUN = VALUES(JUN),
+            JUL = VALUES(JUL),
+            AGO = VALUES(AGO),
+            SEP = VALUES(SEP),
+            OCT = VALUES(OCT),
+            NOV = VALUES(NOV),
+            DIC = VALUES(DIC),
+            TOTAL_RECALCULADO = VALUES(TOTAL_RECALCULADO),
+            ARCHIVO_NOMBRE = VALUES(ARCHIVO_NOMBRE),
+            HOJA_NOMBRE = VALUES(HOJA_NOMBRE),
+            USUARIO_CARGA = VALUES(USUARIO_CARGA)';
+
+        $upsertStmt = $this->pdo->prepare($sql);
+        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_OTROS_EGRESOS WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
+
+        $this->pdo->beginTransaction();
+
+        try {
+            foreach ($rows as $row) {
+                $codigo = (string) ($row['codigo'] ?? '');
+                $anio = (int) ($row['anio'] ?? 0);
+                $periodo = (string) ($row['periodo'] ?? $anio);
+
+                $params = [
+                    'TIPO' => $tipo,
+                    'ANIO' => $anio,
+                    'PERIODO' => $periodo,
+                    'CODIGO' => $codigo,
+                    'NOMBRE_CUENTA' => (string) ($row['nombre_cuenta'] ?? $row['nombre'] ?? ''),
+                    'ENE' => $row['ene'] ?? null,
+                    'FEB' => $row['feb'] ?? null,
+                    'MAR' => $row['mar'] ?? null,
+                    'ABR' => $row['abr'] ?? null,
+                    'MAY' => $row['may'] ?? null,
+                    'JUN' => $row['jun'] ?? null,
+                    'JUL' => $row['jul'] ?? null,
+                    'AGO' => $row['ago'] ?? null,
+                    'SEP' => $row['sep'] ?? null,
+                    'OCT' => $row['oct'] ?? null,
+                    'NOV' => $row['nov'] ?? null,
+                    'DIC' => $row['dic'] ?? null,
+                    'TOTAL_RECALCULADO' => (float) ($row['total_recalculado'] ?? $row['total'] ?? 0),
+                    'ARCHIVO_NOMBRE' => $fileName,
+                    'HOJA_NOMBRE' => $sheetName,
+                    'USUARIO_CARGA' => $usuario,
+                ];
+
+                $existsStmt->execute([
+                    'tipo' => $tipo,
+                    'anio' => $anio,
+                    'codigo' => $codigo,
+                ]);
+                $alreadyExists = $existsStmt->fetchColumn() !== false;
+
+                $upsertStmt->execute($params);
+                if ($alreadyExists) {
+                    $updated++;
+                } else {
+                    $inserted++;
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['inserted_count' => $inserted, 'updated_count' => $updated];
     }
 
     public function upsertGastosOperacionalesRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
