@@ -57,6 +57,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       <h6 class="mb-0">Detalles</h6>
       <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-success" id="viewExcelBtn" style="display:none;" href="#">Ver como Excel</a>
+        <a class="btn btn-sm btn-success" id="downloadExcelBtn" style="display:none;" href="#">Descargar Excel</a>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="openDetailsBtn" data-bs-toggle="modal" data-bs-target="#importDetailsModal">Ver detalles</button>
       </div>
     </div>
@@ -138,6 +139,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const detailsTabs = document.getElementById('detailsTabs');
     const showMoreDetailsBtn = document.getElementById('showMoreDetailsBtn');
     const viewExcelBtn = document.getElementById('viewExcelBtn');
+    const downloadExcelBtn = document.getElementById('downloadExcelBtn');
     const excelGridModalEl = document.getElementById('excelGridModal');
     const excelGridAlert = document.getElementById('excelGridAlert');
     const excelGridTable = document.getElementById('excelGridTable');
@@ -187,11 +189,15 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       `;
 
 
-      if (viewExcelBtn && tab === 'ingresos') {
+      if (viewExcelBtn && downloadExcelBtn && ['ingresos', 'costos'].includes(tab)) {
         const selectedAnio = payload.anio ?? payload?.preview?.[0]?.periodo ?? '';
         const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
+        const base = `?r=import-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}${queryAnio}`;
+        viewExcelBtn.href = `${base}&action=view_excel`;
+        downloadExcelBtn.href = `${base}&action=export_xlsx`;
         viewExcelBtn.dataset.anio = String(selectedAnio || '');
         viewExcelBtn.style.display = '';
+        downloadExcelBtn.style.display = '';
       }
 
       if (mode === 'execute' && inserted + updated === 0 && (counts.importable_rows ?? 0) > 0) {
@@ -264,9 +270,10 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 
     async function openExcelGridPreview() {
       try {
-        const fd = buildFormData();
-        const endpointUrl = `?r=import-excel&action=preview_grid&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
-        const response = await fetch(endpointUrl, { method: 'POST', body: fd });
+        const selectedAnio = viewExcelBtn?.dataset?.anio || '';
+        const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
+        const endpointUrl = `?r=import-excel&action=preview_db&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}${queryAnio}`;
+        const response = await fetch(endpointUrl, { headers: { 'Accept': 'application/json' } });
         const raw = await response.text();
         const payload = raw ? JSON.parse(raw) : {};
         if (!response.ok || payload.ok === false) {
@@ -274,7 +281,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         }
 
         excelGridAlert.innerHTML = '';
-        renderExcelGrid(payload);
+        renderExcelGrid({ headers: payload.columns || [], rows: payload.rows || [] });
         if (window.bootstrap && excelGridModalEl) {
           window.bootstrap.Modal.getOrCreateInstance(excelGridModalEl).show();
         }

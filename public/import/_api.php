@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use App\controllers\ExcelImportController;
+use App\db\Db;
+use App\repositories\PresupuestoIngresosRepository;
+use App\services\ExcelCostosImportService;
+use App\services\ExcelIngresosImportService;
 use App\services\ExcelTemplateImportService;
 use App\services\ImportTemplateCatalog;
 
@@ -21,11 +25,16 @@ if (!function_exists('importApiController')) {
     {
         require_once __DIR__ . '/../../vendor/autoload.php';
         $config = require __DIR__ . '/../../src/config/config.php';
+        $pdo = Db::pdo($config);
+        $repo = new PresupuestoIngresosRepository($pdo);
 
         return new ExcelImportController(
             new ExcelTemplateImportService(),
             new ImportTemplateCatalog(),
-            $config['upload_dir']
+            $config['upload_dir'],
+            new ExcelIngresosImportService($repo),
+            new ExcelCostosImportService($repo),
+            $repo
         );
     }
 }

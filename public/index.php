@@ -16,6 +16,7 @@ use App\services\FlujoGeneratorService;
 use App\services\ImportTemplateCatalog;
 use App\services\ExcelTemplateImportService;
 use App\services\ExcelIngresosImportService;
+use App\services\ExcelCostosImportService;
 use App\services\PgConsolidationService;
 use App\services\WorkflowService;
 use App\repositories\PresupuestoIngresosRepository;
@@ -40,6 +41,7 @@ $excelImportController = new ExcelImportController(
     new ImportTemplateCatalog(),
     $config['upload_dir'],
     new ExcelIngresosImportService($presupuestoIngresosRepository),
+    new ExcelCostosImportService($presupuestoIngresosRepository),
     $presupuestoIngresosRepository
 );
 $anexoController = new AnexoController($anexoRepo);
@@ -118,7 +120,7 @@ if ($route === 'import-excel') {
             'importResult' => $_SESSION['import_result'] ?? null,
         ];
         unset($_SESSION['import_result']);
-        $viewData['excelView'] = $excelImportController->viewExcelPage($activeTipo, isset($_GET['anio']) ? (int) $_GET['anio'] : null);
+        $viewData['excelView'] = $excelImportController->viewExcelPage((string) ($_GET['tab'] ?? 'ingresos'), $activeTipo, isset($_GET['anio']) ? (int) $_GET['anio'] : null);
         $contentView = __DIR__ . '/../src/views/import_excel_view.php';
         require __DIR__ . '/../src/views/layout.php';
         exit;
