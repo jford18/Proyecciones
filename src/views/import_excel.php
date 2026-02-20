@@ -13,7 +13,6 @@ $isIngresosTab = (($selectedTemplate['id'] ?? '') === 'ingresos');
 $details = is_array($result['details'] ?? null) ? $result['details'] : [];
 $warningRows = (int) ($result['counts']['warning_rows'] ?? 0);
 $errorRows = (int) ($result['counts']['error_rows'] ?? 0);
-$skipRows = (int) ($result['counts']['skipped_formula_rows'] ?? 0);
 $detailsCount = count($details);
 ?>
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item active">Importar Excel</li></ol></nav>
@@ -58,7 +57,8 @@ $detailsCount = count($details);
     <p class="mb-2">Archivo: <strong><?= htmlspecialchars((string) ($result['file_name'] ?? '')) ?></strong></p>
     <ul>
       <li>Importables: <strong><?= (int) ($result['counts']['importable_rows'] ?? 0) ?></strong></li>
-      <li>Omitidas por fórmula: <strong><?= (int) ($result['counts']['skipped_formula_rows'] ?? 0) ?></strong></li>
+      <li>Importadas con fórmula (valores calculados): <strong><?= (int) ($result['counts']['imported_formula_rows'] ?? 0) ?></strong></li>
+      <li>Omitidas (sin data calculada / sin datos): <strong><?= (int) ($result['counts']['skipped_formula_rows'] ?? 0) ?></strong></li>
       <li>Errores por tipo/fila: <strong><?= (int) ($result['counts']['error_rows'] ?? 0) ?></strong></li>
       <?php if ($isIngresosTab): ?>
         <li>Warnings: <strong><?= (int) ($result['counts']['warning_rows'] ?? 0) ?></strong></li>
@@ -112,7 +112,7 @@ $detailsCount = count($details);
           <button type="button" class="btn btn-outline-secondary details-filter active" data-filter="ALL">Todos</button>
           <button type="button" class="btn btn-outline-danger details-filter" data-filter="ERROR">Errores</button>
           <button type="button" class="btn btn-outline-warning details-filter" data-filter="WARNING">Warnings</button>
-          <button type="button" class="btn btn-outline-primary details-filter" data-filter="SKIP">Omitidas por fórmula</button>
+          <button type="button" class="btn btn-outline-primary details-filter" data-filter="SKIP">Omitidas (sin valores calculados)</button>
         </div>
         <?php if ($detailsCount === 0): ?>
           <div class="alert alert-secondary mb-0">No hay detalles disponibles.</div>

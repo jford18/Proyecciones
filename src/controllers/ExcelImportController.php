@@ -33,6 +33,7 @@ class ExcelImportController
             'total_rows' => (int) ($result['counts']['total_rows'] ?? 0),
             'importables' => (int) ($result['counts']['importables'] ?? $result['counts']['importable_rows'] ?? 0),
             'skipped_formula_rows' => (int) ($result['counts']['skipped_formula_rows'] ?? 0),
+            'imported_formula_rows' => (int) ($result['counts']['imported_formula_rows'] ?? 0),
             'warning_rows' => (int) ($result['counts']['warning_rows'] ?? 0),
             'error_rows' => (int) ($result['counts']['error_rows'] ?? 0),
         ];
@@ -44,6 +45,7 @@ class ExcelImportController
             'importables' => $summary['importables'],
             'importable_rows' => (int) ($result['counts']['importable_rows'] ?? $summary['importables']),
             'skipped_formula_rows' => $summary['skipped_formula_rows'],
+            'imported_formula_rows' => $summary['imported_formula_rows'],
             'warning_rows' => $summary['warning_rows'],
             'error_rows' => $summary['error_rows'],
         ]);
@@ -97,6 +99,7 @@ class ExcelImportController
             'imported_rows' => $entry['counts']['imported_rows'],
             'updated_rows' => $entry['counts']['updated_rows'],
             'skipped_formula_rows' => $entry['counts']['skipped_formula_rows'],
+            'imported_formula_rows' => $entry['counts']['imported_formula_rows'] ?? 0,
             'error_rows' => $entry['counts']['error_rows'],
             'errors' => $entry['errors'],
         ];
