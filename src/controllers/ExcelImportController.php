@@ -76,6 +76,11 @@ class ExcelImportController
             exit;
         }
 
+        if ($action === 'view-excel') {
+            $this->renderViewExcelHtml();
+            exit;
+        }
+
         $this->respondJson([
             'ok' => false,
             'message' => 'Action no encontrada',
@@ -86,19 +91,118 @@ class ExcelImportController
     public function viewExcelPage(string $tab, string $tipo, ?int $anio): array
     {
         if ($this->presupuestoIngresosRepository === null) {
-            return ['error' => 'Repositorio no disponible.', 'tab' => $tab, 'tipo' => $tipo, 'anio' => $anio];
+            return ['error' => 'Repositorio no disponible.', 'tab' => $tab, 'tipo' => $tipo, 'anio' => $anio, 'headers' => [], 'rows' => []];
         }
 
-        $tab = in_array($tab, ['ingresos', 'costos', 'gastos_operacionales'], true) ? $tab : 'ingresos';
-        $anioResolved = $anio ?? $this->presupuestoIngresosRepository->findFirstAnioByTipoByTab($tab, $tipo);
+        $tab = strtolower(trim($tab));
+        $tipo = trim($tipo);
+        $log = $this->presupuestoIngresosRepository->findLatestImportLogByTabTipo($tab, $tipo);
+        if ($log === null) {
+            return [
+                'tab' => $tab,
+                'tipo' => $tipo,
+                'anio' => $anio,
+                'headers' => [],
+                'rows' => [],
+                'message' => 'No existe un registro en IMPORT_LOG para la pestaña y tipo seleccionados.',
+            ];
+        }
+
+        $jsonPath = trim((string) ($log['JSON_PATH'] ?? $log['json_path'] ?? ''));
+        if ($jsonPath === '') {
+            return [
+                'tab' => $tab,
+                'tipo' => $tipo,
+                'anio' => $anio,
+                'file_name' => (string) ($log['FILE_NAME'] ?? $log['ARCHIVO_NOMBRE'] ?? ''),
+                'sheet_name' => (string) ($log['SHEET_NAME'] ?? $log['HOJA_NOMBRE'] ?? ''),
+                'headers' => [],
+                'rows' => [],
+                'message' => 'El último IMPORT_LOG no tiene JSON_PATH válido.',
+            ];
+        }
+
+        $absolutePath = dirname(__DIR__, 2) . '/' . ltrim($jsonPath, '/');
+        if (!is_file($absolutePath)) {
+            return [
+                'tab' => $tab,
+                'tipo' => $tipo,
+                'anio' => $anio,
+                'file_name' => (string) ($log['FILE_NAME'] ?? $log['ARCHIVO_NOMBRE'] ?? ''),
+                'sheet_name' => (string) ($log['SHEET_NAME'] ?? $log['HOJA_NOMBRE'] ?? ''),
+                'json_path' => $jsonPath,
+                'headers' => [],
+                'rows' => [],
+                'message' => 'No existe el archivo JSON en disco: ' . $jsonPath,
+            ];
+        }
+
+        $raw = file_get_contents($absolutePath);
+        $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        if (!is_array($decoded)) {
+            return [
+                'tab' => $tab,
+                'tipo' => $tipo,
+                'anio' => $anio,
+                'file_name' => (string) ($log['FILE_NAME'] ?? $log['ARCHIVO_NOMBRE'] ?? ''),
+                'sheet_name' => (string) ($log['SHEET_NAME'] ?? $log['HOJA_NOMBRE'] ?? ''),
+                'json_path' => $jsonPath,
+                'headers' => [],
+                'rows' => [],
+                'message' => 'No se pudo leer/decodificar el JSON guardado.',
+            ];
+        }
+
+        $rows = is_array($decoded['rows'] ?? null) ? $decoded['rows'] : [];
+        $headers = [];
+        if (is_array($decoded['headers'] ?? null) && $decoded['headers'] !== []) {
+            $headers = array_values(array_map(static fn($h): string => (string) $h, $decoded['headers']));
+        } elseif ($rows !== []) {
+            $first = $rows[0];
+            if (is_array($first)) {
+                $headers = array_values(array_map(static fn($k): string => strtoupper((string) $k), array_keys($first)));
+            }
+        }
+        if ($headers === []) {
+            $headers = $this->ingresosGridColumns();
+        }
+
+        $mappedRows = array_map(static function (array $row) use ($headers): array {
+            $normalized = [];
+            foreach ($row as $k => $v) {
+                $normalized[strtoupper((string) $k)] = $v;
+            }
+            $out = [];
+            foreach ($headers as $header) {
+                $out[$header] = $normalized[$header] ?? '';
+            }
+            return $out;
+        }, $rows);
 
         return [
             'tab' => $tab,
             'tipo' => $tipo,
-            'anio' => $anioResolved,
-            'columns' => $this->ingresosGridColumns(),
-            'needs_year_selection' => $anioResolved === null,
+            'anio' => $anio ?? ($decoded['anio'] ?? null),
+            'file_name' => (string) (($decoded['file_name'] ?? null) ?: ($log['FILE_NAME'] ?? $log['ARCHIVO_NOMBRE'] ?? '')),
+            'sheet_name' => (string) (($decoded['sheet_name'] ?? null) ?: ($log['SHEET_NAME'] ?? $log['HOJA_NOMBRE'] ?? '')),
+            'json_path' => $jsonPath,
+            'headers' => $headers,
+            'rows' => $mappedRows,
+            'counts' => is_array($decoded['counts'] ?? null) ? $decoded['counts'] : ['total_rows' => count($mappedRows)],
         ];
+    }
+
+
+    private function renderViewExcelHtml(): never
+    {
+        $tab = (string) ($_GET['tab'] ?? 'ingresos');
+        $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
+        $anio = isset($_GET['anio']) ? (int) $_GET['anio'] : null;
+        $excelView = $this->viewExcelPage($tab, $tipo, $anio);
+
+        header('Content-Type: text/html; charset=utf-8');
+        require dirname(__DIR__) . '/views/import_excel_view.php';
+        exit;
     }
 
     private function previewDbJson(): never
@@ -217,13 +321,22 @@ class ExcelImportController
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
-            return $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_INGRESOS';
+            $result['json_path'] = $result['json_path'] ?? null;
+            return $result;
         }
         if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
-            return $this->costosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->costosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_COSTOS';
+            $result['json_path'] = $result['json_path'] ?? null;
+            return $result;
         }
         if (($template['id'] ?? '') === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
-            return $this->gastosOperacionalesService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->gastosOperacionalesService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_GASTOS_OPERACIONALES';
+            $result['json_path'] = $result['json_path'] ?? null;
+            return $result;
         }
         $result = $this->service->validate($uploaded['path'], $template);
 
@@ -272,6 +385,9 @@ class ExcelImportController
             'max_rows' => (int) ($result['max_rows'] ?? 5000),
             'rows_limit_exceeded' => (bool) ($result['rows_limit_exceeded'] ?? false),
             'user' => $result['user'],
+            'anio' => $result['anio'] ?? null,
+            'target_table' => (string) ($result['target_table'] ?? ''),
+            'json_path' => $result['json_path'] ?? null,
         ];
     }
 
@@ -313,6 +429,8 @@ class ExcelImportController
             'user' => $result['user'],
             'timestamp' => $result['timestamp'],
             'file_name' => $result['file_name'],
+            'anio' => $result['anio'] ?? null,
+            'json_path' => $result['json_path'] ?? null,
         ];
     }
 

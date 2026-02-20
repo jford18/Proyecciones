@@ -112,7 +112,7 @@ unset($_SESSION['flash']);
 if ($route === 'import-excel') {
     $user = (string) ($_SESSION['user'] ?? 'local-user');
     $action = isset($_GET['action']) ? (string) $_GET['action'] : null;
-    if ($action === 'view_excel') {
+    if ($action === 'view_excel' || $action === 'view-excel') {
         $viewData = [
             'route' => $route,
             'flash' => $flash,

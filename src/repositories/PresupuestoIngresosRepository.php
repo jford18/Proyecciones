@@ -293,6 +293,23 @@ class PresupuestoIngresosRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    public function findLatestImportLogByTabTipo(string $tab, string $tipo): ?array
+    {
+        $columns = $this->getImportLogColumns();
+        if (!isset($columns['TAB']) || !isset($columns['TIPO'])) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare('SELECT * FROM IMPORT_LOG WHERE TAB = :tab AND TIPO = :tipo ORDER BY ID DESC LIMIT 1');
+        $stmt->execute([
+            'tab' => strtolower(trim($tab)),
+            'tipo' => trim($tipo),
+        ]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row !== false ? $row : null;
+    }
+
     private function getImportLogColumns(): array
     {
         if ($this->importLogColumns !== null) {
