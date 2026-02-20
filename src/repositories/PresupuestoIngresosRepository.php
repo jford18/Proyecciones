@@ -9,6 +9,7 @@ use PDO;
 class PresupuestoIngresosRepository
 {
     private ?array $importLogColumns = null;
+    private ?array $presupuestoIngresosColumns = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -24,25 +25,72 @@ class PresupuestoIngresosRepository
         $updated = 0;
         $existenceCache = [];
 
+        $columns = $this->getPresupuestoIngresosColumns();
         $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
-        $upsertStmt = $this->pdo->prepare('INSERT INTO PRESUPUESTO_INGRESOS (
-            TIPO, ANIO, CODIGO, NOMBRE_CUENTA,
-            ENE, FEB, MAR, ABR, MAY, JUN, JUL, AGO, SEP, OCT, NOV, DIC,
-            TOTAL, ARCHIVO_NOMBRE, HOJA_NOMBRE, USUARIO_CARGA
-        ) VALUES (
-            :tipo, :anio, :codigo, :nombre_cuenta,
-            :ene, :feb, :mar, :abr, :may, :jun, :jul, :ago, :sep, :oct, :nov, :dic,
-            :total, :archivo_nombre, :hoja_nombre, :usuario_carga
-        ) ON DUPLICATE KEY UPDATE
-            NOMBRE_CUENTA = VALUES(NOMBRE_CUENTA),
-            ENE = VALUES(ENE), FEB = VALUES(FEB), MAR = VALUES(MAR), ABR = VALUES(ABR),
-            MAY = VALUES(MAY), JUN = VALUES(JUN), JUL = VALUES(JUL), AGO = VALUES(AGO),
-            SEP = VALUES(SEP), OCT = VALUES(OCT), NOV = VALUES(NOV), DIC = VALUES(DIC),
-            TOTAL = VALUES(TOTAL),
-            ARCHIVO_NOMBRE = VALUES(ARCHIVO_NOMBRE),
-            HOJA_NOMBRE = VALUES(HOJA_NOMBRE),
-            USUARIO_CARGA = VALUES(USUARIO_CARGA),
-            FECHA_ACTUALIZA = CURRENT_TIMESTAMP');
+
+        $insertColumns = [
+            'TIPO' => 'tipo',
+            'ANIO' => 'anio',
+            'CODIGO' => 'codigo',
+            'NOMBRE_CUENTA' => 'nombre_cuenta',
+            'ENE' => 'ene',
+            'FEB' => 'feb',
+            'MAR' => 'mar',
+            'ABR' => 'abr',
+            'MAY' => 'may',
+            'JUN' => 'jun',
+            'JUL' => 'jul',
+            'AGO' => 'ago',
+            'SEP' => 'sep',
+            'OCT' => 'oct',
+            'NOV' => 'nov',
+            'DIC' => 'dic',
+            'TOTAL' => 'total',
+            'ARCHIVO_NOMBRE' => 'archivo_nombre',
+            'HOJA_NOMBRE' => 'hoja_nombre',
+            'USUARIO_CARGA' => 'usuario_carga',
+        ];
+
+        $insertColumns = array_filter(
+            $insertColumns,
+            static fn (string $column): bool => isset($columns[$column]),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        $updateColumns = [
+            'NOMBRE_CUENTA',
+            'ENE',
+            'FEB',
+            'MAR',
+            'ABR',
+            'MAY',
+            'JUN',
+            'JUL',
+            'AGO',
+            'SEP',
+            'OCT',
+            'NOV',
+            'DIC',
+            'TOTAL',
+            'ARCHIVO_NOMBRE',
+            'HOJA_NOMBRE',
+            'USUARIO_CARGA',
+        ];
+
+        $updateSqlParts = [];
+        foreach ($updateColumns as $column) {
+            if (isset($columns[$column]) && isset($insertColumns[$column])) {
+                $updateSqlParts[] = $column . ' = VALUES(' . $column . ')';
+            }
+        }
+        if (isset($columns['FECHA_ACTUALIZA'])) {
+            $updateSqlParts[] = 'FECHA_ACTUALIZA = CURRENT_TIMESTAMP';
+        }
+
+        $columnSql = implode(', ', array_keys($insertColumns));
+        $valuesSql = implode(', ', array_map(static fn (string $param): string => ':' . $param, array_values($insertColumns)));
+        $updateSql = $updateSqlParts === [] ? '' : ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateSqlParts);
+        $upsertStmt = $this->pdo->prepare("INSERT INTO PRESUPUESTO_INGRESOS ({$columnSql}) VALUES ({$valuesSql}){$updateSql}");
 
         $this->pdo->beginTransaction();
 
@@ -60,7 +108,7 @@ class PresupuestoIngresosRepository
                     $existenceCache[$cacheKey] = $existsStmt->fetchColumn() !== false;
                 }
 
-                $upsertStmt->execute([
+                $payload = [
                     'tipo' => $tipo,
                     'anio' => $anio,
                     'codigo' => $codigo,
@@ -81,7 +129,9 @@ class PresupuestoIngresosRepository
                     'archivo_nombre' => $fileName,
                     'hoja_nombre' => $sheetName,
                     'usuario_carga' => $usuario,
-                ]);
+                ];
+
+                $upsertStmt->execute($payload);
 
                 if ($existenceCache[$cacheKey] === true) {
                     $updated++;
@@ -107,27 +157,29 @@ class PresupuestoIngresosRepository
         $columns = $this->getImportLogColumns();
 
         $insertColumns = [
+            'ARCHIVO_NOMBRE' => 'archivo_nombre',
+            'HOJA_NOMBRE' => 'hoja_nombre',
+            'FILE_NAME' => 'file_name',
+            'SHEET_NAME' => 'sheet_name',
             'TAB' => 'tab',
             'TIPO' => 'tipo',
-            'ANIO' => 'anio',
+            'TOTAL_ROWS' => 'total_rows',
             'INSERTED_COUNT' => 'inserted_count',
             'UPDATED_COUNT' => 'updated_count',
-            'SKIPPED_COUNT' => 'skipped_count',
             'WARNING_COUNT' => 'warning_count',
             'ERROR_COUNT' => 'error_count',
             'JSON_PATH' => 'json_path',
-            'DETAILS_JSON' => 'details_json',
-            'COUNTS_JSON' => 'counts_json',
-            'USUARIO' => 'usuario',
-            'HOJA_NOMBRE' => 'hoja_nombre',
-            'ARCHIVO_NOMBRE' => 'archivo_nombre',
+            'USUARIO_CARGA' => 'usuario_carga',
         ];
 
-        if (isset($columns['SHEET_NAME'])) {
-            $insertColumns['SHEET_NAME'] = 'sheet_name';
-        }
-        if (isset($columns['FILE_NAME'])) {
-            $insertColumns['FILE_NAME'] = 'file_name';
+        $insertColumns = array_filter(
+            $insertColumns,
+            static fn (string $column): bool => isset($columns[$column]),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        if ($insertColumns === []) {
+            return;
         }
 
         $columnSql = implode(', ', array_keys($insertColumns));
@@ -144,16 +196,13 @@ class PresupuestoIngresosRepository
             'sheet_name' => $sheetName,
             'archivo_nombre' => $fileName,
             'file_name' => $fileName,
-            'anio' => (int) ($payload['anio'] ?? 0),
+            'total_rows' => (int) ($payload['counts']['total_rows'] ?? 0),
             'inserted_count' => (int) ($payload['inserted_count'] ?? 0),
             'updated_count' => (int) ($payload['updated_count'] ?? 0),
-            'skipped_count' => (int) ($payload['skipped_count'] ?? 0),
             'warning_count' => (int) ($payload['warning_count'] ?? 0),
             'error_count' => (int) ($payload['error_count'] ?? 0),
             'json_path' => (string) ($payload['json_path'] ?? ''),
-            'details_json' => json_encode($payload['details'] ?? [], JSON_UNESCAPED_UNICODE),
-            'counts_json' => json_encode($payload['counts'] ?? [], JSON_UNESCAPED_UNICODE),
-            'usuario' => (string) ($payload['usuario'] ?? 'local-user'),
+            'usuario_carga' => (string) ($payload['usuario'] ?? 'local-user'),
         ]);
     }
 
@@ -173,15 +222,36 @@ class PresupuestoIngresosRepository
             }
         }
 
-        if (!isset($columns['HOJA_NOMBRE'])) {
-            throw new \RuntimeException('IMPORT_LOG no tiene columna HOJA_NOMBRE.');
-        }
-        if (!isset($columns['ARCHIVO_NOMBRE'])) {
-            throw new \RuntimeException('IMPORT_LOG no tiene columna ARCHIVO_NOMBRE.');
-        }
-
         $this->importLogColumns = $columns;
 
         return $this->importLogColumns;
+    }
+
+    private function getPresupuestoIngresosColumns(): array
+    {
+        if ($this->presupuestoIngresosColumns !== null) {
+            return $this->presupuestoIngresosColumns;
+        }
+
+        $stmt = $this->pdo->query('SHOW COLUMNS FROM PRESUPUESTO_INGRESOS');
+        $rows = $stmt !== false ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $columns = [];
+        foreach ($rows as $row) {
+            $name = strtoupper((string) ($row['Field'] ?? ''));
+            if ($name !== '') {
+                $columns[$name] = true;
+            }
+        }
+
+        $required = ['TIPO', 'ANIO', 'CODIGO'];
+        foreach ($required as $column) {
+            if (!isset($columns[$column])) {
+                throw new \RuntimeException('PRESUPUESTO_INGRESOS no tiene columna requerida: ' . $column);
+            }
+        }
+
+        $this->presupuestoIngresosColumns = $columns;
+
+        return $this->presupuestoIngresosColumns;
     }
 }
