@@ -14,10 +14,12 @@ class ExcelProduccionImportService
     private const SHEET_NAME = '7.- Produccion';
     private const GRID_HEADERS = ['PERIODO', 'CODIGO', 'NOMBRE_CUENTA', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'TOTAL_RECALCULADO'];
     private const MONTH_KEYS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    private const HEADER_SCAN_LIMIT = 60;
+    private const MONTH_NAME_ALIASES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
     private const HEADER_ALIASES = [
-        'periodo' => ['PERIODO'],
-        'codigo' => ['CODIGO'],
-        'nombre_cuenta' => ['NOMBRE DE LA CUENTA', 'NOMBRE CUENTA', 'NOMBRE_CUENTA'],
+        'periodo' => ['PERIODO', 'ANIO', 'AÑO', 'YEAR'],
+        'codigo' => ['CODIGO', 'CÓDIGO', 'CODIGO CUENTA', 'CODIGOCTA', 'CTA', 'CUENTA CODIGO'],
+        'nombre_cuenta' => ['NOMBRE CUENTA', 'NOMBRE_CUENTA', 'CUENTA', 'DESCRIPCION', 'DESCRIPCIÓN', 'NOMBRE', 'NOMBRE DE LA CUENTA'],
         'ene' => ['ENE', 'ENERO'],
         'feb' => ['FEB', 'FEBRERO'],
         'mar' => ['MAR', 'MARZO'],
@@ -180,7 +182,10 @@ class ExcelProduccionImportService
         $highestColumnIndex = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
         $headerInfo = $this->findHeaderRowAndMap($sheet, $highestRow, $highestColumnIndex);
         if ($headerInfo === null) {
-            throw new \RuntimeException('No se encontró encabezado con PERIODO y CODIGO');
+            $scanLimit = min(self::HEADER_SCAN_LIMIT, $highestRow);
+            $examples = $this->collectHeaderCandidateExamples($sheet, $scanLimit, $highestColumnIndex);
+            $exampleText = $examples === [] ? 'Sin filas candidatas.' : implode(' || ', $examples);
+            throw new \RuntimeException('No se encontró encabezado con PERIODO y CODIGO. Se escanearon ' . $scanLimit . ' filas. Ejemplos de encabezados detectados: ' . $exampleText);
         }
 
         $rows = [];
@@ -286,30 +291,133 @@ class ExcelProduccionImportService
 
     private function findHeaderRowAndMap(Worksheet $sheet, int $highestRow, int $highestColumnIndex): ?array
     {
-        for ($rowNum = 1; $rowNum <= $highestRow; $rowNum++) {
-            $map = [];
+        $maxRowToScan = min(self::HEADER_SCAN_LIMIT, $highestRow);
+        for ($rowNum = 1; $rowNum <= $maxRowToScan; $rowNum++) {
+            $map = $this->mapHeaderRow($sheet, $rowNum, $highestColumnIndex);
+            $hasMonthByName = false;
+            foreach (self::MONTH_NAME_ALIASES as $monthName) {
+                if (isset($map[$this->monthKeyFromName($monthName)])) {
+                    $hasMonthByName = true;
+                    break;
+                }
+            }
+
+            if (
+                isset($map['codigo'], $map['nombre_cuenta'])
+                && (isset($map['periodo']) || $hasMonthByName)
+            ) {
+                if (!$hasMonthByName) {
+                    $map = $this->injectMonthFallbackByRelativePosition($map, $highestColumnIndex);
+                }
+
+                return ['row' => $rowNum, 'map' => $map];
+            }
+        }
+
+        return null;
+    }
+
+    private function mapHeaderRow(Worksheet $sheet, int $rowNum, int $highestColumnIndex): array
+    {
+        $map = [];
+        for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
+            $header = $this->normalizeHeader($this->cellText($sheet, $columnIndex, $rowNum));
+            if ($header === '') {
+                continue;
+            }
+
+            foreach (self::HEADER_ALIASES as $key => $aliases) {
+                foreach ($aliases as $alias) {
+                    if ($header === $this->normalizeHeader($alias) && !isset($map[$key])) {
+                        $map[$key] = $columnIndex;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    private function injectMonthFallbackByRelativePosition(array $map, int $highestColumnIndex): array
+    {
+        if (!isset($map['nombre_cuenta'])) {
+            return $map;
+        }
+
+        $startIndex = $map['nombre_cuenta'] + 1;
+        foreach (self::MONTH_KEYS as $offset => $monthKey) {
+            if (isset($map[$monthKey])) {
+                continue;
+            }
+            $candidateIndex = $startIndex + $offset;
+            if ($candidateIndex <= $highestColumnIndex) {
+                $map[$monthKey] = $candidateIndex;
+            }
+        }
+
+        return $map;
+    }
+
+    private function monthKeyFromName(string $normalizedMonthName): string
+    {
+        return match ($normalizedMonthName) {
+            'ENERO' => 'ene',
+            'FEBRERO' => 'feb',
+            'MARZO' => 'mar',
+            'ABRIL' => 'abr',
+            'MAYO' => 'may',
+            'JUNIO' => 'jun',
+            'JULIO' => 'jul',
+            'AGOSTO' => 'ago',
+            'SEPTIEMBRE', 'SETIEMBRE' => 'sep',
+            'OCTUBRE' => 'oct',
+            'NOVIEMBRE' => 'nov',
+            'DICIEMBRE' => 'dic',
+            default => '',
+        };
+    }
+
+    private function collectHeaderCandidateExamples(Worksheet $sheet, int $maxRowToScan, int $highestColumnIndex): array
+    {
+        $candidates = [];
+        for ($rowNum = 1; $rowNum <= $maxRowToScan; $rowNum++) {
+            $cells = [];
+            $score = 0;
             for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
                 $header = $this->normalizeHeader($this->cellText($sheet, $columnIndex, $rowNum));
                 if ($header === '') {
                     continue;
                 }
 
-                foreach (self::HEADER_ALIASES as $key => $aliases) {
-                    foreach ($aliases as $alias) {
-                        if ($header === $this->normalizeHeader($alias) && !isset($map[$key])) {
-                            $map[$key] = $columnIndex;
-                            break;
-                        }
-                    }
+                $cells[] = $header;
+                if (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['codigo']), true)) {
+                    $score += 3;
+                } elseif (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['nombre_cuenta']), true)) {
+                    $score += 2;
+                } elseif (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['periodo']), true)) {
+                    $score += 2;
+                } elseif (in_array($header, self::MONTH_NAME_ALIASES, true)) {
+                    $score += 1;
                 }
             }
 
-            if (isset($map['periodo'], $map['codigo'])) {
-                return ['row' => $rowNum, 'map' => $map];
+            if ($cells !== []) {
+                $candidates[] = [
+                    'row' => $rowNum,
+                    'score' => $score,
+                    'cells' => $cells,
+                ];
             }
         }
 
-        return null;
+        usort($candidates, static fn (array $a, array $b): int => $b['score'] <=> $a['score']);
+        $top = array_slice($candidates, 0, 5);
+
+        return array_map(
+            static fn (array $candidate): string => 'fila ' . $candidate['row'] . ': ' . implode(' | ', $candidate['cells']),
+            $top
+        );
     }
 
     private function readNumericNullable(Worksheet $sheet, int $rowNum, ?int $columnIndex, array &$details): ?float
@@ -402,8 +510,18 @@ class ExcelProduccionImportService
 
     private function normalizeHeader(string $value): string
     {
-        $text = strtoupper($this->normalizeText($value));
-        return str_replace(['.', ':'], '', $text);
+        $text = strtoupper(trim($value));
+        $text = strtr($text, [
+            'Á' => 'A',
+            'É' => 'E',
+            'Í' => 'I',
+            'Ó' => 'O',
+            'Ú' => 'U',
+            'Ü' => 'U',
+            'Ñ' => 'N',
+        ]);
+        $text = preg_replace('/[^A-Z0-9_\-\s]/u', ' ', $text) ?? '';
+        return trim(preg_replace('/\s+/', ' ', $text) ?? '');
     }
 
     private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, string $usuario, array $counts, array $details, int $insertedCount, int $updatedCount): string
