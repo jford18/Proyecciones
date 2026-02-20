@@ -6,6 +6,7 @@ namespace App\services;
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 
 class ExcelTemplateImportService
 {
@@ -31,8 +32,9 @@ class ExcelTemplateImportService
     public function validate(string $path, array $template): array
     {
         $details = [];
+        $isIngresos = (($template['id'] ?? '') === 'ingresos');
         try {
-            $sheet = $this->loadTemplateSheet($path, $template['sheet_name']);
+            [$sheetFormulas, $sheetValues] = $this->loadTemplateSheets($path, $template['sheet_name'], $isIngresos);
         } catch (\Throwable $e) {
             $details[] = $this->buildDetail(1, 'A:P', self::SEVERITY_ERROR, 'INVALID_EXCEL', $e->getMessage());
 
@@ -40,6 +42,7 @@ class ExcelTemplateImportService
                 'total_rows' => 0,
                 'importables' => 0,
                 'skipped_formula_rows' => 0,
+                'imported_formula_rows' => 0,
                 'warning_rows' => 0,
                 'error_rows' => 1,
             ];
@@ -55,12 +58,12 @@ class ExcelTemplateImportService
             ];
         }
 
-        $headerValidation = $this->validateHeader($sheet);
+        $headerValidation = $this->validateHeader($sheetFormulas);
         if ($headerValidation !== []) {
             $details = array_merge($details, $headerValidation);
         }
 
-        $parsed = $this->parseRows($sheet);
+        $parsed = $this->parseRows($sheetValues, $sheetFormulas, $isIngresos);
         $details = array_merge($details, $parsed['details']);
 
         $errorRows = 0;
@@ -79,12 +82,13 @@ class ExcelTemplateImportService
             'total_rows' => $parsed['total_rows'],
             'importables' => count($parsed['importable_rows']),
             'skipped_formula_rows' => $parsed['skipped_formula_rows'],
+            'imported_formula_rows' => $parsed['imported_formula_rows'],
             'warning_rows' => $warningRows,
             'error_rows' => $errorRows,
         ];
 
         return [
-            'sheet_name' => $sheet->getTitle(),
+            'sheet_name' => $sheetFormulas->getTitle(),
             'template_id' => $template['id'],
             'preview' => array_slice($parsed['importable_rows'], 0, 20),
             'summary' => $summary,
@@ -100,7 +104,9 @@ class ExcelTemplateImportService
         if (($validation['counts']['error_rows'] ?? 0) > 0) {
             throw new \RuntimeException('La validación contiene errores estructurales. Corrige el archivo antes de importar.');
         }
-        $rows = $this->parseRows($this->loadTemplateSheet($path, $template['sheet_name']))['importable_rows'];
+        $isIngresos = (($template['id'] ?? '') === 'ingresos');
+        [$sheetFormulas, $sheetValues] = $this->loadTemplateSheets($path, $template['sheet_name'], $isIngresos);
+        $rows = $this->parseRows($sheetValues, $sheetFormulas, $isIngresos)['importable_rows'];
 
         $storePath = dirname(__DIR__, 2) . '/var/import_store/' . $template['id'] . '.json';
         $existing = [];
@@ -142,6 +148,7 @@ class ExcelTemplateImportService
                 'imported_rows' => $inserted,
                 'updated_rows' => $updated,
                 'skipped_formula_rows' => $validation['counts']['skipped_formula_rows'],
+                'imported_formula_rows' => $validation['counts']['imported_formula_rows'] ?? 0,
                 'warning_rows' => $validation['counts']['warning_rows'] ?? 0,
                 'error_rows' => $validation['counts']['error_rows'],
                 'omitted_rows' => $validation['counts']['total_rows'] - ($inserted + $updated),
@@ -152,9 +159,25 @@ class ExcelTemplateImportService
         ];
     }
 
-    private function loadTemplateSheet(string $path, string $sheetName): Worksheet
+    private function loadTemplateSheets(string $path, string $sheetName, bool $dualMode): array
     {
-        $spreadsheet = IOFactory::load($path);
+        $sheetFormulas = $this->loadTemplateSheetByMode($path, $sheetName, false);
+        if (!$dualMode) {
+            return [$sheetFormulas, $sheetFormulas];
+        }
+
+        $sheetValues = $this->loadTemplateSheetByMode($path, $sheetName, true);
+
+        return [$sheetFormulas, $sheetValues];
+    }
+
+    private function loadTemplateSheetByMode(string $path, string $sheetName, bool $dataOnly): Worksheet
+    {
+        $reader = IOFactory::createReader('Xlsx');
+        if ($reader instanceof Xlsx) {
+            $reader->setReadDataOnly($dataOnly);
+        }
+        $spreadsheet = $reader->load($path);
         $sheet = $spreadsheet->getSheetByName($sheetName);
         if (!$sheet instanceof Worksheet) {
             throw new \RuntimeException("No existe la hoja requerida: {$sheetName}");
@@ -214,28 +237,31 @@ class ExcelTemplateImportService
         return $details;
     }
 
-    private function parseRows(Worksheet $sheet): array
+    private function parseRows(Worksheet $valueSheet, ?Worksheet $formulaSheet = null, bool $useFormulaWarnings = false): array
     {
-        $highest = $sheet->getHighestDataRow();
+        $highest = $valueSheet->getHighestDataRow();
         $importable = [];
         $details = [];
         $skippedFormulaRows = 0;
+        $importedFormulaRows = 0;
         $totalRows = 0;
+        $formulaSourceSheet = $formulaSheet ?? $valueSheet;
 
         for ($row = 2; $row <= $highest; $row++) {
             $totalRows++;
-            $codigo = $this->normalizeCode((string) $sheet->getCell([2, $row])->getFormattedValue());
-            $nombreCuenta = trim((string) $sheet->getCell([3, $row])->getFormattedValue());
-            $periodo = (int) trim((string) $sheet->getCell([1, $row])->getFormattedValue());
+            $codigo = $this->normalizeCode((string) $valueSheet->getCell([2, $row])->getFormattedValue());
+            $nombreCuenta = trim((string) $valueSheet->getCell([3, $row])->getFormattedValue());
+            $periodo = (int) trim((string) $valueSheet->getCell([1, $row])->getFormattedValue());
 
             $hasFormula = false;
             $monthValues = [];
             foreach (array_keys(self::MONTH_COLUMNS) as $col) {
-                $raw = $sheet->getCell([$col, $row])->getValue();
-                if (is_string($raw) && str_starts_with(trim($raw), '=')) {
+                $rawFormula = $formulaSourceSheet->getCell([$col, $row])->getValue();
+                if ($useFormulaWarnings && is_string($rawFormula) && str_starts_with(trim($rawFormula), '=')) {
                     $hasFormula = true;
-                    break;
                 }
+
+                $raw = $valueSheet->getCell([$col, $row])->getValue();
 
                 if (!$this->isBlank($raw) && !$this->isNumericValue($raw)) {
                     $details[] = $this->buildDetail(
@@ -251,10 +277,9 @@ class ExcelTemplateImportService
                 $monthValues[$col] = $this->toFloat($raw);
             }
 
-            if ($hasFormula) {
-                $skippedFormulaRows++;
-                $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_SKIP, 'FORMULA_ROW', 'Fila omitida por fórmulas en columnas de meses.');
-                continue;
+            $rawTotalFormula = $formulaSourceSheet->getCell([16, $row])->getValue();
+            if ($useFormulaWarnings && is_string($rawTotalFormula) && str_starts_with(trim($rawTotalFormula), '=')) {
+                $hasFormula = true;
             }
 
             if ($codigo === '') {
@@ -270,8 +295,18 @@ class ExcelTemplateImportService
                 }
             }
             if (!$hasNumeric) {
-                $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_WARNING, 'NO_NUMERIC_MONTHS', 'No hay valores numéricos en meses.');
+                if ($hasFormula && $useFormulaWarnings) {
+                    $skippedFormulaRows++;
+                    $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_SKIP, 'NO_CALCULATED_VALUES', 'Fila con fórmulas pero sin valores calculados disponibles; re-guardar el Excel y reintentar.');
+                } else {
+                    $details[] = $this->buildDetail($row, 'D:O', self::SEVERITY_WARNING, 'NO_NUMERIC_MONTHS', 'No hay valores numéricos en meses.');
+                }
                 continue;
+            }
+
+            if ($hasFormula && $useFormulaWarnings) {
+                $importedFormulaRows++;
+                $details[] = $this->buildDetail($row, 'D:P', self::SEVERITY_WARNING, 'FORMULA_ROW_IMPORTED', 'Fila contiene fórmulas. Se importará usando valores calculados del Excel.');
             }
 
             if ($periodo < 1900 || $periodo > 3000) {
@@ -299,6 +334,7 @@ class ExcelTemplateImportService
             'importable_rows' => $importable,
             'details' => $details,
             'skipped_formula_rows' => $skippedFormulaRows,
+            'imported_formula_rows' => $importedFormulaRows,
         ];
     }
 
