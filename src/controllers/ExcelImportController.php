@@ -289,9 +289,9 @@ class ExcelImportController
             $this->respondJson($payload, 500);
         } catch (\Throwable $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $payload = ['ok' => false, 'message' => 'Error interno al importar archivo.'];
+            $payload = ['ok' => false, 'message' => $e->getMessage()];
             if ($this->isLocalDebug()) {
-                $payload['debug'] = $e->getMessage();
+                $payload['debug'] = $e->getTraceAsString();
             }
             $this->respondJson($payload, 500);
         }

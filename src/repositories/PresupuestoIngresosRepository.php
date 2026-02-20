@@ -8,6 +8,8 @@ use PDO;
 
 class PresupuestoIngresosRepository
 {
+    private ?array $importLogColumns = null;
+
     public function __construct(private PDO $pdo)
     {
     }
@@ -102,23 +104,50 @@ class PresupuestoIngresosRepository
 
     public function insertImportLog(array $payload): void
     {
-        $stmt = $this->pdo->prepare('INSERT INTO IMPORT_LOG (
-            TAB, TIPO, SHEET_NAME, FILE_NAME, ANIO,
-            INSERTED_COUNT, UPDATED_COUNT, SKIPPED_COUNT,
-            WARNING_COUNT, ERROR_COUNT, JSON_PATH,
-            DETAILS_JSON, COUNTS_JSON, USUARIO
-        ) VALUES (
-            :tab, :tipo, :sheet_name, :file_name, :anio,
-            :inserted_count, :updated_count, :skipped_count,
-            :warning_count, :error_count, :json_path,
-            :details_json, :counts_json, :usuario
-        )');
+        $columns = $this->getImportLogColumns();
+
+        $insertColumns = [
+            'TAB' => 'tab',
+            'TIPO' => 'tipo',
+            'ANIO' => 'anio',
+            'INSERTED_COUNT' => 'inserted_count',
+            'UPDATED_COUNT' => 'updated_count',
+            'SKIPPED_COUNT' => 'skipped_count',
+            'WARNING_COUNT' => 'warning_count',
+            'ERROR_COUNT' => 'error_count',
+            'JSON_PATH' => 'json_path',
+            'DETAILS_JSON' => 'details_json',
+            'COUNTS_JSON' => 'counts_json',
+            'USUARIO' => 'usuario',
+        ];
+
+        if (isset($columns['HOJA_NOMBRE'])) {
+            $insertColumns['HOJA_NOMBRE'] = 'hoja_nombre';
+        }
+        if (isset($columns['SHEET_NAME'])) {
+            $insertColumns['SHEET_NAME'] = 'sheet_name';
+        }
+        if (isset($columns['ARCHIVO_NOMBRE'])) {
+            $insertColumns['ARCHIVO_NOMBRE'] = 'archivo_nombre';
+        }
+        if (isset($columns['FILE_NAME'])) {
+            $insertColumns['FILE_NAME'] = 'file_name';
+        }
+
+        $columnSql = implode(', ', array_keys($insertColumns));
+        $valuesSql = implode(', ', array_map(static fn (string $param): string => ':' . $param, array_values($insertColumns)));
+        $stmt = $this->pdo->prepare("INSERT INTO IMPORT_LOG ({$columnSql}) VALUES ({$valuesSql})");
+
+        $sheetName = (string) ($payload['sheet_name'] ?? '');
+        $fileName = (string) ($payload['file_name'] ?? '');
 
         $stmt->execute([
             'tab' => (string) ($payload['tab'] ?? 'ingresos'),
             'tipo' => (string) ($payload['tipo'] ?? ''),
-            'sheet_name' => (string) ($payload['sheet_name'] ?? ''),
-            'file_name' => (string) ($payload['file_name'] ?? ''),
+            'hoja_nombre' => $sheetName,
+            'sheet_name' => $sheetName,
+            'archivo_nombre' => $fileName,
+            'file_name' => $fileName,
             'anio' => (int) ($payload['anio'] ?? 0),
             'inserted_count' => (int) ($payload['inserted_count'] ?? 0),
             'updated_count' => (int) ($payload['updated_count'] ?? 0),
@@ -130,5 +159,33 @@ class PresupuestoIngresosRepository
             'counts_json' => json_encode($payload['counts'] ?? [], JSON_UNESCAPED_UNICODE),
             'usuario' => (string) ($payload['usuario'] ?? 'local-user'),
         ]);
+    }
+
+    private function getImportLogColumns(): array
+    {
+        if ($this->importLogColumns !== null) {
+            return $this->importLogColumns;
+        }
+
+        $stmt = $this->pdo->query('SHOW COLUMNS FROM IMPORT_LOG');
+        $rows = $stmt !== false ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        $columns = [];
+        foreach ($rows as $row) {
+            $name = strtoupper((string) ($row['Field'] ?? ''));
+            if ($name !== '') {
+                $columns[$name] = true;
+            }
+        }
+
+        if (!isset($columns['HOJA_NOMBRE']) && !isset($columns['SHEET_NAME'])) {
+            throw new \RuntimeException('IMPORT_LOG no tiene columna HOJA_NOMBRE ni SHEET_NAME.');
+        }
+        if (!isset($columns['ARCHIVO_NOMBRE']) && !isset($columns['FILE_NAME'])) {
+            throw new \RuntimeException('IMPORT_LOG no tiene columna ARCHIVO_NOMBRE ni FILE_NAME.');
+        }
+
+        $this->importLogColumns = $columns;
+
+        return $this->importLogColumns;
     }
 }
