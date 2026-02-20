@@ -109,6 +109,8 @@ class ExcelTemplateImportService
         $rows = $this->parseRows($sheetValues, $sheetFormulas, $isIngresos)['importable_rows'];
 
         $storePath = dirname(__DIR__, 2) . '/var/import_store/' . $template['id'] . '.json';
+        $targetTable = 'var/import_store/' . $template['id'] . '.json';
+        error_log('[IMPORT_EXECUTE][' . strtoupper((string) $template['id']) . '] rows_to_save=' . count($rows) . ' target=' . $targetTable);
         $existing = [];
         if (is_file($storePath)) {
             $existing = json_decode((string) file_get_contents($storePath), true) ?: [];
@@ -136,13 +138,23 @@ class ExcelTemplateImportService
         if (!is_dir(dirname($storePath))) {
             mkdir(dirname($storePath), 0777, true);
         }
-        file_put_contents($storePath, json_encode($existing, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        $written = file_put_contents($storePath, json_encode($existing, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        if ($written === false) {
+            throw new \RuntimeException('Error de escritura al guardar la importación.');
+        }
+
+        if (count($rows) > 0 && ($inserted + $updated) === 0) {
+            throw new \RuntimeException('No se guardaron filas importables. Verifica el mapeo y la escritura de datos.');
+        }
+
+        error_log('[IMPORT_EXECUTE][' . strtoupper((string) $template['id']) . '] inserted_count=' . $inserted . ' updated_count=' . $updated);
 
         return [
             'sheet_name' => $template['sheet_name'],
             'template_id' => $template['id'],
             'user' => $user,
             'timestamp' => date('c'),
+            'target_table' => $targetTable,
             'counts' => [
                 'total_rows' => $validation['counts']['total_rows'],
                 'imported_rows' => $inserted,

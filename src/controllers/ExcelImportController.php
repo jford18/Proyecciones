@@ -57,7 +57,20 @@ class ExcelImportController
             error_log('[IMPORT_VALIDATE][INGRESOS] details length: ' . count($result['details']));
         }
 
-        return $result;
+        return [
+            'ok' => true,
+            'tab' => $template['id'],
+            'tipo' => (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
+            'sheet_name' => $result['sheet_name'],
+            'template_id' => $result['template_id'],
+            'file_name' => $result['file_name'],
+            'summary' => $result['summary'],
+            'details' => $result['details'],
+            'preview' => $result['preview'],
+            'counts' => $result['counts'],
+            'errors' => $result['errors'],
+            'user' => $result['user'],
+        ];
     }
 
     public function execute(array $post, array $files, string $user): array
@@ -68,7 +81,24 @@ class ExcelImportController
         $result['file_name'] = $uploaded['originalName'];
         $this->appendLog($result);
 
-        return $result;
+        return [
+            'ok' => true,
+            'tab' => $template['id'],
+            'tipo' => (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
+            'target_table' => (string) ($result['target_table'] ?? ''),
+            'inserted_count' => (int) ($result['counts']['imported_rows'] ?? 0),
+            'updated_count' => (int) ($result['counts']['updated_rows'] ?? 0),
+            'skipped_count' => (int) ($result['counts']['omitted_rows'] ?? 0),
+            'warning_count' => (int) ($result['counts']['warning_rows'] ?? 0),
+            'counts' => $result['counts'],
+            'details' => $result['details'] ?? [],
+            'preview' => $result['preview'] ?? [],
+            'sheet_name' => $result['sheet_name'],
+            'template_id' => $result['template_id'],
+            'user' => $result['user'],
+            'timestamp' => $result['timestamp'],
+            'file_name' => $result['file_name'],
+        ];
     }
 
     public function logs(int $limit = 50): array
@@ -108,7 +138,7 @@ class ExcelImportController
 
     private function resolveTemplate(array $post): array
     {
-        $templateRef = trim((string) ($post['template_id'] ?? $post['sheet_name'] ?? ''));
+        $templateRef = trim((string) ($post['template_id'] ?? $post['sheet_name'] ?? $_GET['tab'] ?? ''));
         if ($templateRef === '') {
             throw new \RuntimeException('Debe enviar template_id o sheet_name.');
         }
@@ -123,11 +153,12 @@ class ExcelImportController
 
     private function saveUploadedExcel(array $files): array
     {
-        if (!isset($files['excel']) || !is_array($files['excel'])) {
+        $fileRef = isset($files['excel']) && is_array($files['excel']) ? 'excel' : (isset($files['file']) && is_array($files['file']) ? 'file' : null);
+        if ($fileRef === null) {
             throw new \RuntimeException('Debes seleccionar un archivo Excel antes de continuar.');
         }
 
-        $file = $files['excel'];
+        $file = $files[$fileRef];
         $errorCode = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
         if ($errorCode !== UPLOAD_ERR_OK) {
             throw new \RuntimeException('No se pudo subir el archivo.');
