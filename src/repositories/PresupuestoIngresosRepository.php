@@ -23,11 +23,8 @@ class PresupuestoIngresosRepository
 
         $inserted = 0;
         $updated = 0;
-        $existenceCache = [];
 
         $columns = $this->getPresupuestoIngresosColumns();
-        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
-
         $insertColumns = [
             'TIPO' => 'tipo',
             'ANIO' => 'anio',
@@ -97,22 +94,12 @@ class PresupuestoIngresosRepository
         try {
             foreach ($rows as $row) {
                 $codigo = (string) ($row['codigo'] ?? '');
-                $cacheKey = $tipo . '|' . $anio . '|' . $codigo;
-
-                if (!array_key_exists($cacheKey, $existenceCache)) {
-                    $existsStmt->execute([
-                        'tipo' => $tipo,
-                        'anio' => $anio,
-                        'codigo' => $codigo,
-                    ]);
-                    $existenceCache[$cacheKey] = $existsStmt->fetchColumn() !== false;
-                }
 
                 $payload = [
                     'tipo' => $tipo,
                     'anio' => $anio,
                     'codigo' => $codigo,
-                    'nombre_cuenta' => (string) ($row['nombre'] ?? ''),
+                    'nombre_cuenta' => (string) ($row['nombre_cuenta'] ?? $row['nombre'] ?? ''),
                     'ene' => (float) ($row['ene'] ?? 0),
                     'feb' => (float) ($row['feb'] ?? 0),
                     'mar' => (float) ($row['mar'] ?? 0),
@@ -132,12 +119,11 @@ class PresupuestoIngresosRepository
                 ];
 
                 $upsertStmt->execute($payload);
-
-                if ($existenceCache[$cacheKey] === true) {
-                    $updated++;
-                } else {
+                $affected = (int) $upsertStmt->rowCount();
+                if ($affected === 1) {
                     $inserted++;
-                    $existenceCache[$cacheKey] = true;
+                } elseif ($affected === 2) {
+                    $updated++;
                 }
             }
 
@@ -201,7 +187,7 @@ class PresupuestoIngresosRepository
             'updated_count' => (int) ($payload['updated_count'] ?? 0),
             'warning_count' => (int) ($payload['warning_count'] ?? 0),
             'error_count' => (int) ($payload['error_count'] ?? 0),
-            'json_path' => (string) ($payload['json_path'] ?? ''),
+            'json_path' => $payload['json_path'] ?? null,
             'usuario_carga' => (string) ($payload['usuario'] ?? 'local-user'),
         ]);
     }
