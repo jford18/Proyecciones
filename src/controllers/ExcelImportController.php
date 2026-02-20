@@ -55,7 +55,7 @@ class ExcelImportController
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
-            return $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $uploaded['originalName']);
+            return $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->validate($uploaded['path'], $template);
 
@@ -112,7 +112,7 @@ class ExcelImportController
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
-            return $this->ingresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user, $uploaded['originalName']);
+            return $this->ingresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
@@ -372,6 +372,19 @@ class ExcelImportController
         }
 
         return $template;
+    }
+
+
+    private function resolveAnioRequest(array $post): ?int
+    {
+        $raw = $post['anio'] ?? $_POST['anio'] ?? $_GET['anio'] ?? null;
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        $anio = (int) $raw;
+
+        return $anio >= 1900 ? $anio : null;
     }
 
     private function saveUploadedExcel(array $files): array
