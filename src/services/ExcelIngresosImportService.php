@@ -302,7 +302,12 @@ class ExcelIngresosImportService
             return 0.0;
         }
 
-        $cell = $sheet->getCellByColumnAndRow($columnIndex, $rowNum);
+        $ref = $this->cellRef($columnIndex, $rowNum);
+        if ($ref === null) {
+            return 0.0;
+        }
+
+        $cell = $sheet->getCell($ref);
         $rawValue = $cell->getValue();
 
         if (is_string($rawValue) && str_starts_with(trim($rawValue), '=')) {
@@ -356,11 +361,21 @@ class ExcelIngresosImportService
 
     private function cellText(Worksheet $sheet, int $columnIndex, int $rowNum): string
     {
-        if ($columnIndex < 1) {
+        $ref = $this->cellRef($columnIndex, $rowNum);
+        if ($ref === null) {
             return '';
         }
 
-        return $this->normalizeText((string) $sheet->getCellByColumnAndRow($columnIndex, $rowNum)->getFormattedValue());
+        return $this->normalizeText((string) $sheet->getCell($ref)->getFormattedValue());
+    }
+
+    private function cellRef(int $columnIndex, int $rowNum): ?string
+    {
+        if ($columnIndex < 1 || $rowNum < 1) {
+            return null;
+        }
+
+        return Coordinate::stringFromColumnIndex((int) $columnIndex) . (int) $rowNum;
     }
 
     private function columnLabel(int $columnIndex): string
