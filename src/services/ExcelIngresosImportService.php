@@ -18,7 +18,7 @@ class ExcelIngresosImportService
     private const HEADER_ALIASES = [
         'periodo' => ['PERIODO'],
         'codigo' => ['CODIGO'],
-        'nombre_cuenta' => ['NOMBRE CUENTA', 'NOMBRE_CUENTA'],
+        'nombre_cuenta' => ['NOMBRE DE LA CUENTA', 'NOMBRE CUENTA', 'NOMBRE_CUENTA'],
         'ene' => ['ENE', 'ENERO'],
         'feb' => ['FEB', 'FEBRERO'],
         'mar' => ['MAR', 'MARZO'],
