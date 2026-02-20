@@ -172,7 +172,7 @@ class ExcelImportController
             }
         }
         if ($headers === []) {
-            $headers = $this->ingresosGridColumns();
+            $headers = $this->ingresosGridColumns($tab);
         }
 
         $mappedRows = array_map(static function (array $row) use ($headers): array {
@@ -241,7 +241,7 @@ class ExcelImportController
         $this->respondJson([
             'ok' => true,
             'rows' => $rows,
-            'columns' => $this->ingresosGridColumns(),
+            'columns' => $this->ingresosGridColumns($tab),
             'tab' => $tab,
             'tipo' => $tipo,
             'anio' => $anio,
@@ -268,7 +268,7 @@ class ExcelImportController
             }
 
             $rows = $this->presupuestoIngresosRepository->fetchRowsForGridByTab($tab, $tipo, $anio);
-            $columns = $this->ingresosGridColumns();
+            $columns = $this->ingresosGridColumns($tab);
 
             $sheet = (new Spreadsheet())->getActiveSheet();
             $sheet->setTitle(match ($tab) {
@@ -289,6 +289,16 @@ class ExcelImportController
 
             $rowNum = 2;
             foreach ($rows as $row) {
+                if ($tab === 'produccion') {
+                    $sheet->setCellValueByColumnAndRow(1, $rowNum, (int) ($row['ANIO'] ?? $anio));
+                    $sheet->setCellValueByColumnAndRow(2, $rowNum, (string) ($row['TIPO'] ?? $tipo));
+                    $sheet->setCellValueByColumnAndRow(3, $rowNum, (string) ($row['PARAMETRO_KEY'] ?? ''));
+                    $sheet->setCellValueByColumnAndRow(4, $rowNum, (string) ($row['PARAMETRO_NOMBRE'] ?? ''));
+                    $sheet->setCellValueByColumnAndRow(5, $rowNum, (float) ($row['VALOR'] ?? 0));
+                    $rowNum++;
+                    continue;
+                }
+
                 $sheet->setCellValueByColumnAndRow(1, $rowNum, (int) ($row['PERIODO'] ?? $anio));
                 $sheet->setCellValueByColumnAndRow(2, $rowNum, (string) ($row['CODIGO'] ?? ''));
                 $sheet->setCellValueByColumnAndRow(3, $rowNum, (string) ($row['NOMBRE_CUENTA'] ?? ''));
@@ -308,7 +318,7 @@ class ExcelImportController
                 $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
             }
             if ($highest >= 2) {
-                $sheet->getStyle('D2:' . $lastColumnLetter . $highest)->getNumberFormat()->setFormatCode('#,##0.00');
+                $sheet->getStyle(($tab === 'produccion' ? 'E2:' : 'D2:') . $lastColumnLetter . $highest)->getNumberFormat()->setFormatCode('#,##0.00');
             }
 
             $filename = sprintf('%s_%s_%d.xlsx', $tab, strtolower($tipo), $anio);
@@ -328,8 +338,12 @@ class ExcelImportController
         }
     }
 
-    private function ingresosGridColumns(): array
+    private function ingresosGridColumns(string $tab = 'ingresos'): array
     {
+        if ($tab === 'produccion') {
+            return ['ANIO', 'TIPO', 'PARAMETRO_KEY', 'PARAMETRO_NOMBRE', 'VALOR'];
+        }
+
         return ['PERIODO', 'CODIGO', 'NOMBRE_CUENTA', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'TOTAL', 'TOTAL_RECALCULADO'];
     }
 
@@ -375,7 +389,7 @@ class ExcelImportController
         }
         if (($template['id'] ?? '') === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
             $result = $this->produccionService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
-            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_PRODUCCION';
+            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_PRODUCCION_PARAMETRO';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }

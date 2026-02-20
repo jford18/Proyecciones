@@ -189,25 +189,12 @@ class PresupuestoIngresosRepository
         $inserted = 0;
         $updated = 0;
 
-        $sql = 'INSERT INTO PRESUPUESTO_PRODUCCION (
+        $sql = 'INSERT INTO PRESUPUESTO_PRODUCCION_PARAMETRO (
             TIPO,
             ANIO,
-            PERIODO,
-            CODIGO,
-            NOMBRE_CUENTA,
-            ENE,
-            FEB,
-            MAR,
-            ABR,
-            MAY,
-            JUN,
-            JUL,
-            AGO,
-            SEP,
-            OCT,
-            NOV,
-            DIC,
-            TOTAL_RECALCULADO,
+            PARAMETRO_KEY,
+            PARAMETRO_NOMBRE,
+            VALOR,
             ARCHIVO_NOMBRE,
             HOJA_NOMBRE,
             USUARIO_CARGA,
@@ -215,49 +202,24 @@ class PresupuestoIngresosRepository
         ) VALUES (
             :TIPO,
             :ANIO,
-            :PERIODO,
-            :CODIGO,
-            :NOMBRE_CUENTA,
-            :ENE,
-            :FEB,
-            :MAR,
-            :ABR,
-            :MAY,
-            :JUN,
-            :JUL,
-            :AGO,
-            :SEP,
-            :OCT,
-            :NOV,
-            :DIC,
-            :TOTAL_RECALCULADO,
+            :PARAMETRO_KEY,
+            :PARAMETRO_NOMBRE,
+            :VALOR,
             :ARCHIVO_NOMBRE,
             :HOJA_NOMBRE,
             :USUARIO_CARGA,
             CURRENT_TIMESTAMP
         )
         ON DUPLICATE KEY UPDATE
-            NOMBRE_CUENTA = VALUES(NOMBRE_CUENTA),
-            ENE = VALUES(ENE),
-            FEB = VALUES(FEB),
-            MAR = VALUES(MAR),
-            ABR = VALUES(ABR),
-            MAY = VALUES(MAY),
-            JUN = VALUES(JUN),
-            JUL = VALUES(JUL),
-            AGO = VALUES(AGO),
-            SEP = VALUES(SEP),
-            OCT = VALUES(OCT),
-            NOV = VALUES(NOV),
-            DIC = VALUES(DIC),
-            TOTAL_RECALCULADO = VALUES(TOTAL_RECALCULADO),
+            PARAMETRO_NOMBRE = VALUES(PARAMETRO_NOMBRE),
+            VALOR = VALUES(VALOR),
             ARCHIVO_NOMBRE = VALUES(ARCHIVO_NOMBRE),
             HOJA_NOMBRE = VALUES(HOJA_NOMBRE),
             USUARIO_CARGA = VALUES(USUARIO_CARGA),
             FECHA_CARGA = CURRENT_TIMESTAMP';
 
         $upsertStmt = $this->pdo->prepare($sql);
-        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_PRODUCCION WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
+        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_PRODUCCION_PARAMETRO WHERE TIPO = :tipo AND ANIO = :anio AND PARAMETRO_KEY = :parametro_key LIMIT 1');
 
         $this->pdo->beginTransaction();
 
@@ -265,23 +227,10 @@ class PresupuestoIngresosRepository
             foreach ($rows as $row) {
                 $params = [
                     'TIPO' => $tipo,
-                    'ANIO' => (int) ($row['anio'] ?? 0),
-                    'PERIODO' => (int) ($row['periodo'] ?? $row['anio'] ?? 0),
-                    'CODIGO' => (string) ($row['codigo'] ?? ''),
-                    'NOMBRE_CUENTA' => (string) ($row['nombre_cuenta'] ?? ''),
-                    'ENE' => $row['ene'] ?? null,
-                    'FEB' => $row['feb'] ?? null,
-                    'MAR' => $row['mar'] ?? null,
-                    'ABR' => $row['abr'] ?? null,
-                    'MAY' => $row['may'] ?? null,
-                    'JUN' => $row['jun'] ?? null,
-                    'JUL' => $row['jul'] ?? null,
-                    'AGO' => $row['ago'] ?? null,
-                    'SEP' => $row['sep'] ?? null,
-                    'OCT' => $row['oct'] ?? null,
-                    'NOV' => $row['nov'] ?? null,
-                    'DIC' => $row['dic'] ?? null,
-                    'TOTAL_RECALCULADO' => (float) ($row['total_recalculado'] ?? 0),
+                    'ANIO' => (int) ($row['ANIO'] ?? 0),
+                    'PARAMETRO_KEY' => (string) ($row['PARAMETRO_KEY'] ?? ''),
+                    'PARAMETRO_NOMBRE' => (string) ($row['PARAMETRO_NOMBRE'] ?? ''),
+                    'VALOR' => (float) ($row['VALOR'] ?? 0),
                     'ARCHIVO_NOMBRE' => $fileName,
                     'HOJA_NOMBRE' => $sheetName,
                     'USUARIO_CARGA' => $usuario,
@@ -289,8 +238,8 @@ class PresupuestoIngresosRepository
 
                 $existsStmt->execute([
                     'tipo' => $tipo,
-                    'anio' => (int) ($row['anio'] ?? 0),
-                    'codigo' => (string) ($row['codigo'] ?? ''),
+                    'anio' => (int) ($row['ANIO'] ?? 0),
+                    'parametro_key' => (string) ($row['PARAMETRO_KEY'] ?? ''),
                 ]);
                 $alreadyExists = $existsStmt->fetchColumn() !== false;
 
@@ -587,6 +536,24 @@ class PresupuestoIngresosRepository
     public function fetchRowsForGridByTab(string $tab, string $tipo, int $anio): array
     {
         $table = $this->tableByTab($tab);
+
+        if ($tab === 'produccion') {
+            $stmt = $this->pdo->prepare(
+                'SELECT
+                    ANIO,
+                    TIPO,
+                    PARAMETRO_KEY,
+                    PARAMETRO_NOMBRE,
+                    VALOR
+                FROM ' . $table . '
+                WHERE TIPO = :tipo AND ANIO = :anio
+                ORDER BY PARAMETRO_KEY'
+            );
+            $stmt->execute(['tipo' => $tipo, 'anio' => $anio]);
+
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
+
         $columns = $this->getPresupuestoColumnsByTab($tab);
         $totalColumn = isset($columns['TOTAL_RECALCULADO']) ? 'TOTAL_RECALCULADO' : 'TOTAL';
         $stmt = $this->pdo->prepare(
@@ -700,7 +667,7 @@ class PresupuestoIngresosRepository
             }
         }
 
-        $required = ['TIPO', 'ANIO', 'CODIGO'];
+        $required = $tab === 'produccion' ? ['TIPO', 'ANIO', 'PARAMETRO_KEY'] : ['TIPO', 'ANIO', 'CODIGO'];
         foreach ($required as $column) {
             if (!isset($columns[$column])) {
                 throw new \RuntimeException($table . ' no tiene columna requerida: ' . $column);
@@ -749,7 +716,7 @@ class PresupuestoIngresosRepository
             'otros_egresos' => 'PRESUPUESTO_OTROS_EGRESOS',
             'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
             'gastos_financieros' => 'PRESUPUESTO_GASTOS_FINANCIEROS',
-            'produccion' => 'PRESUPUESTO_PRODUCCION',
+            'produccion' => 'PRESUPUESTO_PRODUCCION_PARAMETRO',
             default => 'PRESUPUESTO_INGRESOS',
         };
     }
