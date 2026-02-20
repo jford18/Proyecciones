@@ -165,7 +165,8 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         if (contentType.includes('application/json')) {
           payload = rawBody ? JSON.parse(rawBody) : {};
         } else {
-          throw new Error(`Endpoint devolvió HTML o texto no JSON (HTTP ${response.status}). URL: ${endpointUrl}`);
+          const snippet = String(rawBody || '').slice(0, 140).replace(/\s+/g, ' ').trim();
+          throw new Error(`Endpoint devolvió HTML o texto no JSON (HTTP ${response.status}). URL: ${endpointUrl}. Body: ${snippet || '[vacío]'}`);
         }
 
         console.log(`[IMPORT_${mode.toUpperCase()}][${tab.toUpperCase()}] response:`, payload);
