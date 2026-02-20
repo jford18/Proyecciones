@@ -45,46 +45,56 @@ $firstProjectId = isset($projectOptions[0]['ID']) ? (int) $projectOptions[0]['ID
 $activeProjectId = (int) ($_SESSION['active_project_id'] ?? $firstProjectId);
 $activeTipo = in_array(($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO'), ['PRESUPUESTO', 'REAL'], true) ? (string) ($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO') : 'PRESUPUESTO';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-if (str_starts_with($path, '/import/')) {
+function sendJsonResponse(array $payload, int $status = 200): never {
     header('Content-Type: application/json; charset=utf-8');
-    try {
-        if ($path === '/import/templates' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-            echo json_encode($excelImportController->templates(), JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        if ($path === '/import/validate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-            $user = (string) ($_SESSION['user'] ?? 'local-user');
-            echo json_encode($excelImportController->validate($_POST, $_FILES, $user), JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        if ($path === '/import/execute' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-            $user = (string) ($_SESSION['user'] ?? 'local-user');
-            echo json_encode($excelImportController->execute($_POST, $_FILES, $user), JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        if ($path === '/import/logs' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-            echo json_encode($excelImportController->logs((int) ($_GET['limit'] ?? 50)), JSON_UNESCAPED_UNICODE);
-            exit;
-        }
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
-        http_response_code(404);
-        echo json_encode(['error' => 'Endpoint no encontrado'], JSON_UNESCAPED_UNICODE);
-        exit;
+function handleImportApi(ExcelImportController $excelImportController, string $endpoint): void {
+    $method = (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET');
+    $user = (string) ($_SESSION['user'] ?? 'local-user');
+
+    try {
+        if ($endpoint === 'templates' && $method === 'GET') {
+            sendJsonResponse($excelImportController->templates());
+        }
+        if ($endpoint === 'validate' && $method === 'POST') {
+            sendJsonResponse($excelImportController->validate($_POST, $_FILES, $user));
+        }
+        if ($endpoint === 'execute' && $method === 'POST') {
+            sendJsonResponse($excelImportController->execute($_POST, $_FILES, $user));
+        }
+        if ($endpoint === 'logs' && $method === 'GET') {
+            sendJsonResponse($excelImportController->logs((int) ($_GET['limit'] ?? 50)));
+        }
+        sendJsonResponse([
+            'ok' => false,
+            'message' => 'Endpoint no encontrado',
+            'details' => ['endpoint' => $endpoint, 'method' => $method],
+        ], 404);
     } catch (Throwable $e) {
-        $status = ($path === '/import/execute') ? 500 : 422;
-        http_response_code($status);
-        echo json_encode([
+        $status = ($endpoint === 'execute') ? 500 : 422;
+        sendJsonResponse([
             'ok' => false,
             'message' => $e->getMessage(),
-            'details' => ['path' => $path, 'method' => (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')],
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+            'details' => ['endpoint' => $endpoint, 'method' => $method],
+        ], $status);
     }
+}
+
+if (str_starts_with($path, '/import/')) {
+    handleImportApi($excelImportController, basename($path));
+}
+
+$route = (string) ($_GET['r'] ?? 'dashboard');
+if (str_starts_with($route, 'import-excel/')) {
+    handleImportApi($excelImportController, substr($route, strlen('import-excel/')) ?: '');
 }
 
 $_SESSION['active_tipo'] = $activeTipo;
 
-$route = $_GET['r'] ?? 'dashboard';
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
 
