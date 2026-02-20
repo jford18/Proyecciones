@@ -12,6 +12,7 @@ class PresupuestoIngresosRepository
     private ?array $presupuestoIngresosColumns = null;
     private ?array $presupuestoCostosColumns = null;
     private ?array $presupuestoGastosOperacionalesColumns = null;
+    private ?array $presupuestoGastosFinancierosColumns = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -30,6 +31,11 @@ class PresupuestoIngresosRepository
     public function upsertGastosOperacionalesRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         return $this->upsertRowsByTab('gastos_operacionales', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertGastosFinancierosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
+        return $this->upsertRowsByTab('gastos_financieros', $tipo, $sheetName, $fileName, $usuario, $rows);
     }
 
     public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
@@ -234,6 +240,11 @@ class PresupuestoIngresosRepository
         return $this->findFirstAnioByTipoByTab('gastos_operacionales', $tipo);
     }
 
+    public function findFirstAnioByTipoGastosFinancieros(string $tipo): ?int
+    {
+        return $this->findFirstAnioByTipoByTab('gastos_financieros', $tipo);
+    }
+
     public function findFirstAnioByTipoByTab(string $tab, string $tipo): ?int
     {
         $table = $this->tableByTab($tab);
@@ -263,6 +274,11 @@ class PresupuestoIngresosRepository
         return $this->fetchRowsForGridByTab('gastos_operacionales', $tipo, $anio);
     }
 
+    public function fetchGastosFinancierosRowsForGrid(string $tipo, int $anio): array
+    {
+        return $this->fetchRowsForGridByTab('gastos_financieros', $tipo, $anio);
+    }
+
     public function fetchRowsForGridByTab(string $tab, string $tipo, int $anio): array
     {
         $table = $this->tableByTab($tab);
@@ -283,7 +299,8 @@ class PresupuestoIngresosRepository
                 OCT,
                 NOV,
                 DIC,
-                TOTAL
+                TOTAL,
+                TOTAL AS TOTAL_RECALCULADO
             FROM ' . $table . '
             WHERE TIPO = :tipo AND ANIO = :anio
             ORDER BY LENGTH(CODIGO), CODIGO'
@@ -352,6 +369,9 @@ class PresupuestoIngresosRepository
         if ($tab === 'gastos_operacionales' && $this->presupuestoGastosOperacionalesColumns !== null) {
             return $this->presupuestoGastosOperacionalesColumns;
         }
+        if ($tab === 'gastos_financieros' && $this->presupuestoGastosFinancierosColumns !== null) {
+            return $this->presupuestoGastosFinancierosColumns;
+        }
 
         $table = $this->tableByTab($tab);
         $stmt = $this->pdo->query('SHOW COLUMNS FROM ' . $table);
@@ -381,6 +401,11 @@ class PresupuestoIngresosRepository
             return $this->presupuestoGastosOperacionalesColumns;
         }
 
+        if ($tab === 'gastos_financieros') {
+            $this->presupuestoGastosFinancierosColumns = $columns;
+            return $this->presupuestoGastosFinancierosColumns;
+        }
+
         $this->presupuestoIngresosColumns = $columns;
         return $this->presupuestoIngresosColumns;
     }
@@ -390,6 +415,7 @@ class PresupuestoIngresosRepository
         return match (strtolower($tab)) {
             'costos' => 'PRESUPUESTO_COSTOS',
             'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
+            'gastos_financieros' => 'PRESUPUESTO_GASTOS_FINANCIEROS',
             default => 'PRESUPUESTO_INGRESOS',
         };
     }

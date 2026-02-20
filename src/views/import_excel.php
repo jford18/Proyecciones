@@ -222,7 +222,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
           <td>${escapeHtml(row.periodo ?? '')}</td>
           <td>${escapeHtml(row.codigo ?? '')}</td>
           <td>${escapeHtml(row.nombre_cuenta ?? '')}</td>
-          <td>${Number(row.total ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td>${Number((row.total_recalculado ?? row.total) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         </tr>
       `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
     }
@@ -267,7 +267,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       excelGridBody.innerHTML = rows.map((row) => {
         return `<tr>${headers.map((h) => {
           const value = row[h] ?? '';
-          const isNumeric = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'].includes(h);
+          const isNumeric = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL','TOTAL_RECALCULADO'].includes(h);
           return `<td class="${isNumeric ? 'text-end' : 'text-nowrap'}">${isNumeric ? formatNumber(value) : escapeHtml(value)}</td>`;
         }).join('')}</tr>`;
       }).join('') || '<tr><td class="text-muted">Sin filas para mostrar.</td></tr>';

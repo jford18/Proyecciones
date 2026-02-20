@@ -10,7 +10,7 @@ $headersView = is_array($excelView['headers'] ?? null) ? $excelView['headers'] :
 $rowsView = is_array($excelView['rows'] ?? null) ? $excelView['rows'] : [];
 $messageView = (string) ($excelView['message'] ?? '');
 $totalRows = count($rowsView);
-$numericHeaders = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'];
+$numericHeaders = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL','TOTAL_RECALCULADO'];
 ?>
 <!doctype html>
 <html lang="es">
