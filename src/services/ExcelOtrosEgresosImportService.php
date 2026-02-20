@@ -59,7 +59,7 @@ class ExcelOtrosEgresosImportService
             'error_count' => (int) ($parsed['counts']['error_rows'] ?? 0),
             'counts' => $parsed['counts'],
             'details' => $parsed['details'],
-            'preview' => array_slice($parsed['rows'], 0, 20),
+            'preview' => array_slice($parsed['rows'], 0, 50),
             'json_path' => null,
             'user' => null,
             'timestamp' => date('c'),
@@ -139,7 +139,7 @@ class ExcelOtrosEgresosImportService
                 'error_count' => (int) ($counts['error_rows'] ?? 0),
                 'counts' => $counts,
                 'details' => $details,
-                'preview' => array_slice($rows, 0, 20),
+                'preview' => array_slice($rows, 0, 50),
                 'json_path' => $jsonPath,
                 'user' => $usuario,
                 'timestamp' => date('c'),
@@ -188,6 +188,7 @@ class ExcelOtrosEgresosImportService
         $rows = [];
         $details = [];
         $totalRows = 0;
+        $lastPeriodo = $anioRequest !== null ? (string) $anioRequest : null;
         $lastAnio = $anioRequest;
 
         for ($rowNum = $headerInfo['row'] + 1; $rowNum <= $highestRow; $rowNum++) {
@@ -204,11 +205,14 @@ class ExcelOtrosEgresosImportService
             if ($periodoRaw !== '') {
                 $parsedAnio = $this->parsePeriodoYear($periodoRaw);
                 if ($parsedAnio !== null) {
+                    $lastPeriodo = $periodoRaw;
                     $lastAnio = $parsedAnio;
                 } else {
                     $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['periodo']), 'WARNING', 'PERIODO_INVALIDO', 'PERIODO inválido; fila omitida.', $periodoRaw);
                     continue;
                 }
+            } elseif ($lastPeriodo !== null) {
+                $periodoRaw = $lastPeriodo;
             }
 
             if ($codigo === '') {
@@ -227,7 +231,7 @@ class ExcelOtrosEgresosImportService
             }
 
             $item = [
-                'periodo' => (string) $lastAnio,
+                'periodo' => $periodoRaw,
                 'anio' => $lastAnio,
                 'codigo' => $codigo,
                 'nombre_cuenta' => $nombre,
@@ -367,7 +371,7 @@ class ExcelOtrosEgresosImportService
         }
 
         $year = (int) substr($digits, 0, 4);
-        return ($year >= 2000 && $year <= 2500) ? $year : null;
+        return ($year >= 1900 && $year <= 2500) ? $year : null;
     }
 
     private function cellText(Worksheet $sheet, int $columnIndex, int $rowNum): string
