@@ -15,8 +15,10 @@ use App\services\ExcelAnexoImportService;
 use App\services\FlujoGeneratorService;
 use App\services\ImportTemplateCatalog;
 use App\services\ExcelTemplateImportService;
+use App\services\ExcelIngresosImportService;
 use App\services\PgConsolidationService;
 use App\services\WorkflowService;
+use App\repositories\PresupuestoIngresosRepository;
 
 session_start();
 require __DIR__ . '/../vendor/autoload.php';
@@ -32,7 +34,12 @@ $pgService = new PgConsolidationService($anexoRepo, __DIR__ . '/../var/cache', $
 $workflowService = new WorkflowService($anexoRepo, $logRepo, $pgService);
 $flujoService = new FlujoGeneratorService($flujoRepo, $pgMap);
 $importController = new ImportController(new ExcelAnexoImportService(), $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
-$excelImportController = new ExcelImportController(new ExcelTemplateImportService(), new ImportTemplateCatalog(), $config['upload_dir']);
+$excelImportController = new ExcelImportController(
+    new ExcelTemplateImportService(),
+    new ImportTemplateCatalog(),
+    $config['upload_dir'],
+    new ExcelIngresosImportService(new PresupuestoIngresosRepository($pdo))
+);
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($workflowService);
 

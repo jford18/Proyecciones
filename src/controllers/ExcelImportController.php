@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\controllers;
 
 use App\services\ExcelTemplateImportService;
+use App\services\ExcelIngresosImportService;
 use App\services\ImportTemplateCatalog;
 
 class ExcelImportController
@@ -15,7 +16,8 @@ class ExcelImportController
     public function __construct(
         private ExcelTemplateImportService $service,
         private ImportTemplateCatalog $catalog,
-        private string $baseUploadDir
+        private string $baseUploadDir,
+        private ?ExcelIngresosImportService $ingresosService = null
     ) {
     }
 
@@ -52,6 +54,9 @@ class ExcelImportController
     {
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
+        if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
+            return $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $uploaded['originalName']);
+        }
         $result = $this->service->validate($uploaded['path'], $template);
 
         $summary = $result['summary'] ?? [
@@ -106,6 +111,9 @@ class ExcelImportController
     {
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
+        if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
+            return $this->ingresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user, $uploaded['originalName']);
+        }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
         $this->appendLog($result);
@@ -273,12 +281,28 @@ class ExcelImportController
             $this->logImport('EXECUTE END ok=true inserted=' . $inserted . ' updated=' . $updated . ' skipped=' . $skipped . ' warnings=' . $warnings . ' highest=' . $highestRow . ' processed=' . $processedRows);
             $this->respondJson($response);
         } catch (\RuntimeException $e) {
-            $this->logImport('EXECUTE END ok=false status=400 error=' . $e->getMessage());
-            $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
+            $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
+            $payload = ['ok' => false, 'message' => $e->getMessage()];
+            if ($this->isLocalDebug()) {
+                $payload['debug'] = $e->getTraceAsString();
+            }
+            $this->respondJson($payload, 500);
         } catch (\Throwable $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $this->respondJson(['ok' => false, 'message' => 'Error interno al importar archivo.'], 500);
+            $payload = ['ok' => false, 'message' => 'Error interno al importar archivo.'];
+            if ($this->isLocalDebug()) {
+                $payload['debug'] = $e->getMessage();
+            }
+            $this->respondJson($payload, 500);
         }
+    }
+
+    private function isLocalDebug(): bool
+    {
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $serverName = (string) ($_SERVER['SERVER_NAME'] ?? '');
+
+        return str_contains($host, 'localhost') || str_contains($host, '127.0.0.1') || str_contains($serverName, 'localhost') || str_contains($serverName, '127.0.0.1');
     }
 
     private function respondJson(array $payload, int $status = 200): never
