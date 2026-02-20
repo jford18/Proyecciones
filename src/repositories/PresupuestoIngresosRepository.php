@@ -15,7 +15,7 @@ class PresupuestoIngresosRepository
     {
     }
 
-    public function upsertIngresosRows(string $tipo, int $anio, string $sheetName, string $fileName, string $usuario, array $rows): array
+    public function upsertIngresosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         if ($rows === []) {
             return ['inserted_count' => 0, 'updated_count' => 0];
@@ -97,7 +97,7 @@ class PresupuestoIngresosRepository
 
                 $payload = [
                     'tipo' => $tipo,
-                    'anio' => $anio,
+                    'anio' => (int) ($row['anio'] ?? 0),
                     'codigo' => $codigo,
                     'nombre_cuenta' => (string) ($row['nombre_cuenta'] ?? $row['nombre'] ?? ''),
                     'ene' => (float) ($row['ene'] ?? 0),

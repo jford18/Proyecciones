@@ -63,7 +63,7 @@ class ExcelIngresosImportService
             [$sheet, $anio, $details, $rows, $counts, $fileName] = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName);
             $sheetName = $sheet->getTitle();
 
-            $upsert = $this->repository->upsertIngresosRows($tipo, $anio, $sheetName, $fileName, $usuario, $rows);
+            $upsert = $this->repository->upsertIngresosRows($tipo, $sheetName, $fileName, $usuario, $rows);
             $insertedCount = (int) ($upsert['inserted_count'] ?? 0);
             $updatedCount = (int) ($upsert['updated_count'] ?? 0);
 
@@ -133,10 +133,8 @@ class ExcelIngresosImportService
         }
 
         $fileName = $originalFileName ?: basename($fileTmpPath);
-        $anio = $this->resolveAnio($anioRequest, $fileName);
-        if ($anio === null) {
-            throw new \RuntimeException('ANIO requerido');
-        }
+        $anioActual = $anioRequest;
+        $anioDetectado = null;
 
         $details = [];
         $rows = [];
@@ -144,6 +142,13 @@ class ExcelIngresosImportService
         $totalRows = 0;
 
         for ($rowNum = 1; $rowNum <= $highestRow; $rowNum++) {
+            $periodoCell = $this->normalizeText((string) $sheet->getCell('A' . $rowNum)->getFormattedValue());
+            $anioEnFila = $this->parsePeriodoYear($periodoCell);
+            if ($anioEnFila !== null) {
+                $anioActual = $anioEnFila;
+                $anioDetectado = $anioEnFila;
+            }
+
             $codigo = $this->normalizeText((string) $sheet->getCell('B' . $rowNum)->getFormattedValue());
             $nombre = $this->normalizeText((string) $sheet->getCell('C' . $rowNum)->getFormattedValue());
 
@@ -162,7 +167,12 @@ class ExcelIngresosImportService
                 continue;
             }
 
-            $item = ['codigo' => $codigo, 'nombre_cuenta' => $nombre];
+            if ($anioActual === null) {
+                $details[] = $this->detail($rowNum, 'A', 'ERROR', 'ANIO_REQUIRED', 'ANIO requerido');
+                continue;
+            }
+
+            $item = ['anio' => $anioActual, 'codigo' => $codigo, 'nombre_cuenta' => $nombre];
             $sum = 0.0;
 
             foreach (self::MONTH_MAP as $column => $key) {
@@ -186,6 +196,10 @@ class ExcelIngresosImportService
             $rows[] = $item;
         }
 
+        if ($anioDetectado === null) {
+            throw new \RuntimeException('ANIO requerido');
+        }
+
         $counts = [
             'total_rows' => $totalRows,
             'imported_rows' => 0,
@@ -196,7 +210,7 @@ class ExcelIngresosImportService
             'error_rows' => $this->countBySeverity($details, 'ERROR'),
         ];
 
-        return [$sheet, $anio, $details, $rows, $counts, $fileName];
+        return [$sheet, $anioDetectado, $details, $rows, $counts, $fileName];
     }
 
     private function readNumericCell(Worksheet $sheet, string $column, int $rowNum, bool $registerWarnings = true): array
@@ -273,17 +287,13 @@ class ExcelIngresosImportService
         return is_numeric($text) ? (float) $text : null;
     }
 
-    private function resolveAnio(?int $anioRequest, string $fileName): ?int
+    private function parsePeriodoYear(string $periodoCell): ?int
     {
-        if ($anioRequest !== null && $anioRequest >= 1900) {
-            return $anioRequest;
+        if (preg_match('/^\d{4}$/', $periodoCell) !== 1) {
+            return null;
         }
 
-        if (preg_match('/(20\d{2})/', $fileName, $matches) === 1) {
-            return (int) $matches[1];
-        }
-
-        return null;
+        return (int) $periodoCell;
     }
 
     private function rowLooksRelevant(Worksheet $sheet, int $rowNum): bool
@@ -298,7 +308,7 @@ class ExcelIngresosImportService
         return false;
     }
 
-    private function storeJsonEvidence(array $rows, string $tipo, int $anio, string $sheetName, string $fileName, string $usuario, array $counts, array $details, int $insertedCount, int $updatedCount): string
+    private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, string $usuario, array $counts, array $details, int $insertedCount, int $updatedCount): string
     {
         $relativePath = 'var/import_store/ingresos.json';
         $absolutePath = dirname(__DIR__, 2) . '/' . $relativePath;
