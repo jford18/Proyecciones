@@ -14,6 +14,8 @@ class ExcelTemplateImportService
     private const SEVERITY_WARNING = 'WARNING';
     private const SEVERITY_SKIP = 'SKIP';
 
+    private const MAX_PARSE_ROWS = 5000;
+
     private const MONTH_COLUMNS = [
         4 => 'Enero',
         5 => 'Febrero',
@@ -55,6 +57,10 @@ class ExcelTemplateImportService
                 'counts' => $summary + ['importable_rows' => 0],
                 'details' => $details,
                 'errors' => $details,
+                'processed_rows' => 0,
+                'highest_row' => 0,
+                'max_rows' => self::MAX_PARSE_ROWS,
+                'rows_limit_exceeded' => false,
             ];
         }
 
@@ -95,6 +101,10 @@ class ExcelTemplateImportService
             'counts' => $summary + ['importable_rows' => $summary['importables']],
             'details' => $details,
             'errors' => $details,
+            'processed_rows' => (int) ($parsed['processed_rows'] ?? 0),
+            'highest_row' => (int) ($parsed['highest_row'] ?? 0),
+            'max_rows' => (int) ($parsed['max_rows'] ?? self::MAX_PARSE_ROWS),
+            'rows_limit_exceeded' => (bool) ($parsed['rows_limit_exceeded'] ?? false),
         ];
     }
 
@@ -151,6 +161,10 @@ class ExcelTemplateImportService
 
         return [
             'sheet_name' => $template['sheet_name'],
+            'highest_row' => (int) ($validation['highest_row'] ?? 0),
+            'max_rows' => (int) ($validation['max_rows'] ?? self::MAX_PARSE_ROWS),
+            'processed_rows' => (int) ($validation['processed_rows'] ?? 0),
+            'rows_limit_exceeded' => (bool) ($validation['rows_limit_exceeded'] ?? false),
             'template_id' => $template['id'],
             'user' => $user,
             'timestamp' => date('c'),
@@ -164,6 +178,9 @@ class ExcelTemplateImportService
                 'warning_rows' => $validation['counts']['warning_rows'] ?? 0,
                 'error_rows' => $validation['counts']['error_rows'],
                 'omitted_rows' => $validation['counts']['total_rows'] - ($inserted + $updated),
+                'processed_rows' => (int) ($validation['processed_rows'] ?? 0),
+                'highest_row' => (int) ($validation['highest_row'] ?? 0),
+                'max_rows' => (int) ($validation['max_rows'] ?? self::MAX_PARSE_ROWS),
             ],
             'details' => $validation['details'] ?? [],
             'errors' => $validation['errors'],
@@ -251,7 +268,8 @@ class ExcelTemplateImportService
 
     private function parseRows(Worksheet $valueSheet, ?Worksheet $formulaSheet = null, bool $useFormulaWarnings = false): array
     {
-        $highest = $valueSheet->getHighestDataRow();
+        $highestRow = (int) $valueSheet->getHighestRow();
+        $maxRows = min($highestRow, self::MAX_PARSE_ROWS);
         $importable = [];
         $details = [];
         $skippedFormulaRows = 0;
@@ -259,7 +277,7 @@ class ExcelTemplateImportService
         $totalRows = 0;
         $formulaSourceSheet = $formulaSheet ?? $valueSheet;
 
-        for ($row = 2; $row <= $highest; $row++) {
+        for ($row = 2; $row <= $maxRows; $row++) {
             $totalRows++;
             $codigo = $this->normalizeCode((string) $valueSheet->getCell([2, $row])->getFormattedValue());
             $nombreCuenta = trim((string) $valueSheet->getCell([3, $row])->getFormattedValue());
@@ -347,6 +365,10 @@ class ExcelTemplateImportService
             'details' => $details,
             'skipped_formula_rows' => $skippedFormulaRows,
             'imported_formula_rows' => $importedFormulaRows,
+            'processed_rows' => $totalRows,
+            'highest_row' => $highestRow,
+            'max_rows' => $maxRows,
+            'rows_limit_exceeded' => $highestRow > self::MAX_PARSE_ROWS,
         ];
     }
 

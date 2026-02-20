@@ -93,6 +93,9 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 
     function buildFormData() {
       const file = fileInput?.files?.[0];
+      if (file) {
+        console.log('[IMPORT_FILE]', file.name, file.size);
+      }
       if (!file) {
         throw new Error('Debes seleccionar un archivo Excel antes de continuar.');
       }
@@ -155,10 +158,15 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       const endpointUrl = `?r=import-excel&action=${encodeURIComponent(action)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
       try {
         const fd = buildFormData();
+        const controller = new AbortController();
+        const timeoutMs = 60000;
+        const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
         const response = await fetch(endpointUrl, {
           method: 'POST',
           body: fd,
+          signal: controller.signal,
         });
+        window.clearTimeout(timeoutId);
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
         const rawBody = await response.text();
         let payload = null;
@@ -177,6 +185,9 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         }
         renderResult(payload, mode);
       } catch (error) {
+        if (error?.name === 'AbortError') {
+          error = new Error('La importación sigue procesando. Intenta nuevamente o revisa logs del servidor.');
+        }
         resultCard.style.display = '';
         resultTitle.textContent = 'Error';
         resultFile.textContent = '';
