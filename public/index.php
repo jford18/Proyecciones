@@ -17,6 +17,7 @@ use App\services\ImportTemplateCatalog;
 use App\services\ExcelTemplateImportService;
 use App\services\ExcelIngresosImportService;
 use App\services\ExcelCostosImportService;
+use App\services\ExcelOtrosIngresosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
 use App\services\PgConsolidationService;
@@ -44,6 +45,7 @@ $excelImportController = new ExcelImportController(
     $config['upload_dir'],
     new ExcelIngresosImportService($presupuestoIngresosRepository),
     new ExcelCostosImportService($presupuestoIngresosRepository),
+    new ExcelOtrosIngresosImportService($presupuestoIngresosRepository),
     new ExcelGastosOperacionalesImportService($presupuestoIngresosRepository),
     new ExcelGastosFinancierosImportService($presupuestoIngresosRepository),
     $presupuestoIngresosRepository
