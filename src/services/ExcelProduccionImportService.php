@@ -5,35 +5,14 @@ declare(strict_types=1);
 namespace App\services;
 
 use App\repositories\PresupuestoIngresosRepository;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ExcelProduccionImportService
 {
     private const SHEET_NAME = '7.- Produccion';
-    private const GRID_HEADERS = ['PERIODO', 'CODIGO', 'NOMBRE_CUENTA', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'TOTAL_RECALCULADO'];
-    private const MONTH_KEYS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    private const HEADER_SCAN_LIMIT = 60;
-    private const MONTH_NAME_ALIASES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
-    private const HEADER_ALIASES = [
-        'periodo' => ['PERIODO', 'ANIO', 'AÑO', 'YEAR'],
-        'codigo' => ['CODIGO', 'CÓDIGO', 'CODIGO CUENTA', 'CODIGOCTA', 'CTA', 'CUENTA CODIGO'],
-        'nombre_cuenta' => ['NOMBRE CUENTA', 'NOMBRE_CUENTA', 'CUENTA', 'DESCRIPCION', 'DESCRIPCIÓN', 'NOMBRE', 'NOMBRE DE LA CUENTA'],
-        'ene' => ['ENE', 'ENERO'],
-        'feb' => ['FEB', 'FEBRERO'],
-        'mar' => ['MAR', 'MARZO'],
-        'abr' => ['ABR', 'ABRIL'],
-        'may' => ['MAY', 'MAYO'],
-        'jun' => ['JUN', 'JUNIO'],
-        'jul' => ['JUL', 'JULIO'],
-        'ago' => ['AGO', 'AGOSTO'],
-        'sep' => ['SEP', 'SEPTIEMBRE'],
-        'oct' => ['OCT', 'OCTUBRE'],
-        'nov' => ['NOV', 'NOVIEMBRE'],
-        'dic' => ['DIC', 'DICIEMBRE'],
-        'total_recalculado' => ['TOTAL', 'TOTAL RECALCULADO', 'TOTAL_RECALCULADO'],
-    ];
+    private const GRID_HEADERS = ['ANIO', 'TIPO', 'PARAMETRO_KEY', 'PARAMETRO_NOMBRE', 'VALOR'];
+    private const SCAN_ROWS_LIMIT = 60;
 
     public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null)
     {
@@ -42,13 +21,14 @@ class ExcelProduccionImportService
 
     public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
     {
-        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseProduccion($fileTmpPath, $tipo, $anioRequest, $originalFileName);
+        $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], 'validate', $parsed['counts'], $parsed['details']);
 
         return [
             'ok' => true,
             'tab' => 'produccion',
             'tipo' => $tipo,
-            'target_table' => 'PRESUPUESTO_PRODUCCION',
+            'target_table' => 'PRESUPUESTO_PRODUCCION_PARAMETRO',
             'file_name' => $parsed['file_name'],
             'sheet_name' => $parsed['sheet_name'],
             'anio' => $parsed['anio'],
@@ -56,17 +36,19 @@ class ExcelProduccionImportService
             'updated_count' => 0,
             'skipped_count' => (int) ($parsed['counts']['omitted_rows'] ?? 0),
             'warning_count' => (int) ($parsed['counts']['warning_rows'] ?? 0),
-            'error_count' => 0,
+            'error_count' => (int) ($parsed['counts']['error_rows'] ?? 0),
             'counts' => $parsed['counts'],
             'details' => $parsed['details'],
             'preview' => array_slice($parsed['rows'], 0, 50),
-            'json_path' => null,
+            'json_path' => $jsonPath,
+            'user' => 'validate',
+            'timestamp' => date('c'),
         ];
     }
 
     public function previewGrid(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
     {
-        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseProduccion($fileTmpPath, $tipo, $anioRequest, $originalFileName);
 
         return [
             'ok' => true,
@@ -76,22 +58,11 @@ class ExcelProduccionImportService
             'file_name' => $parsed['file_name'],
             'headers' => self::GRID_HEADERS,
             'rows' => array_map(static fn (array $row): array => [
-                'PERIODO' => $row['periodo'],
-                'CODIGO' => $row['codigo'],
-                'NOMBRE_CUENTA' => $row['nombre_cuenta'],
-                'ENE' => $row['ene'],
-                'FEB' => $row['feb'],
-                'MAR' => $row['mar'],
-                'ABR' => $row['abr'],
-                'MAY' => $row['may'],
-                'JUN' => $row['jun'],
-                'JUL' => $row['jul'],
-                'AGO' => $row['ago'],
-                'SEP' => $row['sep'],
-                'OCT' => $row['oct'],
-                'NOV' => $row['nov'],
-                'DIC' => $row['dic'],
-                'TOTAL_RECALCULADO' => $row['total_recalculado'],
+                'ANIO' => $row['ANIO'],
+                'TIPO' => $row['TIPO'],
+                'PARAMETRO_KEY' => $row['PARAMETRO_KEY'],
+                'PARAMETRO_NOMBRE' => $row['PARAMETRO_NOMBRE'],
+                'VALOR' => $row['VALOR'],
             ], $parsed['rows']),
             'counts' => $parsed['counts'],
             'details' => $parsed['details'],
@@ -100,181 +71,98 @@ class ExcelProduccionImportService
 
     public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null): array
     {
-        $sheetName = self::SHEET_NAME;
-        $fileName = $originalFileName ?: basename($fileTmpPath);
-        $counts = ['total_rows' => 0, 'imported_rows' => 0, 'updated_rows' => 0, 'omitted_rows' => 0, 'warning_rows' => 0, 'error_rows' => 0];
-        $details = [];
-        $rows = [];
-        $jsonPath = null;
+        $parsed = $this->parseProduccion($fileTmpPath, $tipo, $anioRequest, $originalFileName);
+        $upsert = $this->repository->upsertProduccionRows($tipo, $parsed['sheet_name'], $parsed['file_name'], $usuario, $parsed['rows']);
 
-        try {
-            $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
-            $rows = $parsed['rows'];
-            $details = $parsed['details'];
-            $counts = $parsed['counts'];
-            $sheetName = $parsed['sheet_name'];
-            $fileName = $parsed['file_name'];
+        $counts = $parsed['counts'];
+        $counts['imported_rows'] = (int) ($upsert['inserted_count'] ?? 0);
+        $counts['updated_rows'] = (int) ($upsert['updated_count'] ?? 0);
 
-            $upsert = $this->repository->upsertProduccionRows($tipo, $sheetName, $fileName, $usuario, $rows);
-            $counts['imported_rows'] = (int) ($upsert['inserted_count'] ?? 0);
-            $counts['updated_rows'] = (int) ($upsert['updated_count'] ?? 0);
+        $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $usuario, $counts, $parsed['details']);
 
-            $jsonPath = $this->storeJsonEvidence($rows, $tipo, $parsed['anio'], $sheetName, $fileName, $usuario, $counts, $details, $counts['imported_rows'], $counts['updated_rows']);
+        $response = [
+            'ok' => true,
+            'tab' => 'produccion',
+            'tipo' => $tipo,
+            'target_table' => 'PRESUPUESTO_PRODUCCION_PARAMETRO',
+            'file_name' => $parsed['file_name'],
+            'sheet_name' => $parsed['sheet_name'],
+            'anio' => $parsed['anio'],
+            'inserted_count' => (int) ($upsert['inserted_count'] ?? 0),
+            'updated_count' => (int) ($upsert['updated_count'] ?? 0),
+            'skipped_count' => (int) ($counts['omitted_rows'] ?? 0),
+            'warning_count' => (int) ($counts['warning_rows'] ?? 0),
+            'error_count' => (int) ($counts['error_rows'] ?? 0),
+            'counts' => $counts,
+            'details' => $parsed['details'],
+            'preview' => array_slice($parsed['rows'], 0, 50),
+            'json_path' => $jsonPath,
+            'user' => $usuario,
+            'timestamp' => date('c'),
+        ];
 
-            $response = [
-                'ok' => true,
-                'tab' => 'produccion',
-                'tipo' => $tipo,
-                'target_table' => 'PRESUPUESTO_PRODUCCION',
-                'file_name' => $fileName,
-                'sheet_name' => $sheetName,
-                'anio' => $parsed['anio'],
-                'inserted_count' => $counts['imported_rows'],
-                'updated_count' => $counts['updated_rows'],
-                'skipped_count' => (int) ($counts['omitted_rows'] ?? 0),
-                'warning_count' => $this->countBySeverity($details, 'WARNING'),
-                'error_count' => 0,
-                'counts' => $counts,
-                'details' => $details,
-                'preview' => array_slice($rows, 0, 50),
-                'json_path' => $jsonPath,
-                'user' => $usuario,
-                'timestamp' => date('c'),
-            ];
+        $this->repository->insertImportLog($response + ['usuario' => $usuario]);
 
-            $this->repository->insertImportLog($response + ['usuario' => $usuario]);
-
-            return $response;
-        } catch (\Throwable $e) {
-            $errorDetails = $details;
-            $errorDetails[] = $this->detail(0, '-', 'ERROR', 'EXECUTE_ERROR', $e->getMessage());
-            $this->repository->insertImportLog([
-                'tab' => 'produccion',
-                'tipo' => $tipo,
-                'sheet_name' => $sheetName,
-                'file_name' => $fileName,
-                'counts' => $counts,
-                'inserted_count' => 0,
-                'updated_count' => 0,
-                'warning_count' => $this->countBySeverity($errorDetails, 'WARNING'),
-                'error_count' => 1,
-                'json_path' => $jsonPath,
-                'usuario' => $usuario,
-            ]);
-            throw $e;
-        }
+        return $response;
     }
 
-    private function parseProduccion(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null): array
+    private function parseProduccion(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
     {
         $reader = new Xlsx();
         $reader->setReadDataOnly(false);
         $spreadsheet = $reader->load($fileTmpPath);
+
         $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
         if (!$sheet instanceof Worksheet) {
-            $sheet = $spreadsheet->getSheetCount() > 0 ? $spreadsheet->getSheet(0) : null;
-        }
-        if (!$sheet instanceof Worksheet) {
-            throw new \RuntimeException('No existe la hoja requerida: 7.- Produccion');
+            throw new \RuntimeException('No existe la hoja requerida: ' . self::SHEET_NAME);
         }
 
-        $highestRow = (int) $sheet->getHighestDataRow();
-        $highestColumnIndex = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
-        $headerInfo = $this->findHeaderRowAndMap($sheet, $highestRow, $highestColumnIndex);
-        if ($headerInfo === null) {
-            $scanLimit = min(self::HEADER_SCAN_LIMIT, $highestRow);
-            $examples = $this->collectHeaderCandidateExamples($sheet, $scanLimit, $highestColumnIndex);
-            $exampleText = $examples === [] ? 'Sin filas candidatas.' : implode(' || ', $examples);
-            throw new \RuntimeException('No se encontró encabezado con PERIODO y CODIGO. Se escanearon ' . $scanLimit . ' filas. Ejemplos de encabezados detectados: ' . $exampleText);
-        }
-
+        $anio = $anioRequest ?? (int) date('Y');
         $rows = [];
         $details = [];
-        $totalRows = 0;
-        $lastPeriodo = $anioRequest !== null ? (string) $anioRequest : '';
-        $lastAnio = $anioRequest ?? $this->parsePeriodoYear($sheet->getCell('A3')->getFormattedValue());
+        $scanLimit = min(self::SCAN_ROWS_LIMIT, (int) $sheet->getHighestRow());
 
-        for ($rowNum = $headerInfo['row'] + 1; $rowNum <= $highestRow; $rowNum++) {
-            $totalRows++;
-            $periodoCell = $this->cellText($sheet, $headerInfo['map']['periodo'], $rowNum);
-            $codigo = $this->normalizeCodigo($this->cellText($sheet, $headerInfo['map']['codigo'], $rowNum));
-            $nombre = $this->normalizeText($this->cellText($sheet, $headerInfo['map']['nombre_cuenta'] ?? 0, $rowNum));
+        for ($rowNum = 1; $rowNum <= $scanLimit; $rowNum++) {
+            $rawA = $this->cellText($sheet, 1, $rowNum);
+            $rawB = $this->cellText($sheet, 2, $rowNum);
 
-            if ($periodoCell !== '') {
-                $parsedAnio = $this->parsePeriodoYear($periodoCell);
-                if ($parsedAnio !== null) {
-                    $lastPeriodo = $periodoCell;
-                    $lastAnio = $parsedAnio;
-                }
-            } elseif ($lastPeriodo !== '') {
-                $periodoCell = $lastPeriodo;
-            } elseif ($lastAnio !== null) {
-                $periodoCell = (string) $lastAnio;
-            }
-
-            if ($codigo === '' && $nombre === '') {
-                $details[] = $this->detail($rowNum, '-', 'WARNING', 'EMPTY_ROW', 'Fila vacía; se omite.');
+            if ($rawA === '' && $rawB === '') {
+                $details[] = $this->detail($rowNum, 'A:B', 'WARNING', 'EMPTY_ROW', 'Fila vacía; se omite.');
                 continue;
             }
 
-            if ($codigo === '') {
-                $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['codigo']), 'WARNING', 'EMPTY_CODIGO', 'CODIGO vacío; fila omitida.');
+            [$paramName, $rawValue] = $this->splitParametro($rawA, $rawB);
+            if ($paramName === '') {
+                $details[] = $this->detail($rowNum, 'A', 'WARNING', 'EMPTY_PARAMETRO', 'Nombre de parámetro vacío; fila omitida.', $rawA);
                 continue;
             }
 
-            if ($nombre === '') {
-                $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['nombre_cuenta'] ?? 0), 'WARNING', 'EMPTY_NOMBRE_CUENTA', 'NOMBRE_CUENTA vacío; fila omitida.');
+            $normalizedValue = $this->normalizeNumericString($rawValue);
+            if ($normalizedValue === null) {
+                $details[] = $this->detail($rowNum, 'B', 'WARNING', 'INVALID_VALOR', 'VALOR vacío o no numérico; fila omitida.', $rawValue);
                 continue;
             }
 
-            if ($lastAnio === null) {
-                $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['periodo']), 'WARNING', 'ANIO_REQUIRED', 'No se pudo derivar ANIO desde PERIODO.');
-                continue;
-            }
-
-            $item = [
-                'periodo' => $periodoCell !== '' ? (int) $periodoCell : $lastAnio,
-                'anio' => $lastAnio,
-                'codigo' => $codigo,
-                'nombre_cuenta' => $nombre,
+            $rows[] = [
+                'ANIO' => $anio,
+                'TIPO' => $tipo,
+                'PARAMETRO_KEY' => $this->buildParametroKey($paramName),
+                'PARAMETRO_NOMBRE' => $paramName,
+                'VALOR' => $normalizedValue,
             ];
+        }
 
-            $sum = 0.0;
-            $hasMonthData = false;
-            foreach (self::MONTH_KEYS as $monthKey) {
-                $columnIndex = $headerInfo['map'][$monthKey] ?? null;
-                $parsed = $this->readNumericNullable($sheet, $rowNum, $columnIndex, $details);
-                $item[$monthKey] = $parsed;
-                $numeric = $parsed ?? 0.0;
-                $sum += $numeric;
-                if (abs($numeric) > 0.0) {
-                    $hasMonthData = true;
-                }
-            }
-
-            if (!$hasMonthData) {
-                $details[] = $this->detail($rowNum, '-', 'WARNING', 'EMPTY_MESES', 'Meses vacíos o en 0; fila omitida.');
-                continue;
-            }
-
-            $item['total_recalculado'] = round($sum, 2);
-
-            if (isset($headerInfo['map']['total_recalculado'])) {
-                $excelTotal = $this->readNumericNullable($sheet, $rowNum, $headerInfo['map']['total_recalculado'], $details);
-                if ($excelTotal !== null && abs($excelTotal - $item['total_recalculado']) > 0.01) {
-                    $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['total_recalculado']), 'WARNING', 'TOTAL_MISMATCH', 'TOTAL Excel difiere del TOTAL recalculado.');
-                }
-            }
-
-            $rows[] = $item;
+        if ($rows === []) {
+            $details[] = $this->detail(0, '-', 'ERROR', 'NO_PARAMETROS', 'La hoja no contiene parámetros reconocibles en A/B o formato "PARAMETRO | VALOR".');
+            throw new \RuntimeException('La hoja "' . self::SHEET_NAME . '" no contiene parámetros reconocibles.');
         }
 
         $counts = [
-            'total_rows' => $totalRows,
+            'total_rows' => $scanLimit,
+            'importable_rows' => count($rows),
             'imported_rows' => 0,
             'updated_rows' => 0,
-            'importable_rows' => count($rows),
-            'omitted_rows' => max(0, $totalRows - count($rows)),
+            'omitted_rows' => max(0, $scanLimit - count($rows)),
             'warning_rows' => $this->countBySeverity($details, 'WARNING'),
             'error_rows' => $this->countBySeverity($details, 'ERROR'),
         ];
@@ -282,249 +170,83 @@ class ExcelProduccionImportService
         return [
             'sheet_name' => $sheet->getTitle(),
             'file_name' => $originalFileName ?: basename($fileTmpPath),
-            'anio' => $lastAnio,
+            'anio' => $anio,
             'rows' => $rows,
             'details' => $details,
             'counts' => $counts,
         ];
     }
 
-    private function findHeaderRowAndMap(Worksheet $sheet, int $highestRow, int $highestColumnIndex): ?array
+    private function splitParametro(string $rawA, string $rawB): array
     {
-        $maxRowToScan = min(self::HEADER_SCAN_LIMIT, $highestRow);
-        for ($rowNum = 1; $rowNum <= $maxRowToScan; $rowNum++) {
-            $map = $this->mapHeaderRow($sheet, $rowNum, $highestColumnIndex);
-            $hasMonthByName = false;
-            foreach (self::MONTH_NAME_ALIASES as $monthName) {
-                if (isset($map[$this->monthKeyFromName($monthName)])) {
-                    $hasMonthByName = true;
-                    break;
-                }
-            }
-
-            if (
-                isset($map['codigo'], $map['nombre_cuenta'])
-                && (isset($map['periodo']) || $hasMonthByName)
-            ) {
-                if (!$hasMonthByName) {
-                    $map = $this->injectMonthFallbackByRelativePosition($map, $highestColumnIndex);
-                }
-
-                return ['row' => $rowNum, 'map' => $map];
-            }
+        if ($rawB !== '') {
+            return [$this->normalizeText($rawA), $rawB];
         }
 
-        return null;
-    }
-
-    private function mapHeaderRow(Worksheet $sheet, int $rowNum, int $highestColumnIndex): array
-    {
-        $map = [];
-        for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
-            $header = $this->normalizeHeader($this->cellText($sheet, $columnIndex, $rowNum));
-            if ($header === '') {
-                continue;
-            }
-
-            foreach (self::HEADER_ALIASES as $key => $aliases) {
-                foreach ($aliases as $alias) {
-                    if ($header === $this->normalizeHeader($alias) && !isset($map[$key])) {
-                        $map[$key] = $columnIndex;
-                        break;
-                    }
-                }
-            }
+        if (str_contains($rawA, '|')) {
+            [$left, $right] = array_pad(explode('|', $rawA, 2), 2, '');
+            return [$this->normalizeText($left), trim($right)];
         }
 
-        return $map;
+        return [$this->normalizeText($rawA), ''];
     }
 
-    private function injectMonthFallbackByRelativePosition(array $map, int $highestColumnIndex): array
+    private function normalizeNumericString(string $value): ?float
     {
-        if (!isset($map['nombre_cuenta'])) {
-            return $map;
-        }
-
-        $startIndex = $map['nombre_cuenta'] + 1;
-        foreach (self::MONTH_KEYS as $offset => $monthKey) {
-            if (isset($map[$monthKey])) {
-                continue;
-            }
-            $candidateIndex = $startIndex + $offset;
-            if ($candidateIndex <= $highestColumnIndex) {
-                $map[$monthKey] = $candidateIndex;
-            }
-        }
-
-        return $map;
-    }
-
-    private function monthKeyFromName(string $normalizedMonthName): string
-    {
-        return match ($normalizedMonthName) {
-            'ENERO' => 'ene',
-            'FEBRERO' => 'feb',
-            'MARZO' => 'mar',
-            'ABRIL' => 'abr',
-            'MAYO' => 'may',
-            'JUNIO' => 'jun',
-            'JULIO' => 'jul',
-            'AGOSTO' => 'ago',
-            'SEPTIEMBRE', 'SETIEMBRE' => 'sep',
-            'OCTUBRE' => 'oct',
-            'NOVIEMBRE' => 'nov',
-            'DICIEMBRE' => 'dic',
-            default => '',
-        };
-    }
-
-    private function collectHeaderCandidateExamples(Worksheet $sheet, int $maxRowToScan, int $highestColumnIndex): array
-    {
-        $candidates = [];
-        for ($rowNum = 1; $rowNum <= $maxRowToScan; $rowNum++) {
-            $cells = [];
-            $score = 0;
-            for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
-                $header = $this->normalizeHeader($this->cellText($sheet, $columnIndex, $rowNum));
-                if ($header === '') {
-                    continue;
-                }
-
-                $cells[] = $header;
-                if (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['codigo']), true)) {
-                    $score += 3;
-                } elseif (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['nombre_cuenta']), true)) {
-                    $score += 2;
-                } elseif (in_array($header, array_map(fn ($alias) => $this->normalizeHeader($alias), self::HEADER_ALIASES['periodo']), true)) {
-                    $score += 2;
-                } elseif (in_array($header, self::MONTH_NAME_ALIASES, true)) {
-                    $score += 1;
-                }
-            }
-
-            if ($cells !== []) {
-                $candidates[] = [
-                    'row' => $rowNum,
-                    'score' => $score,
-                    'cells' => $cells,
-                ];
-            }
-        }
-
-        usort($candidates, static fn (array $a, array $b): int => $b['score'] <=> $a['score']);
-        $top = array_slice($candidates, 0, 5);
-
-        return array_map(
-            static fn (array $candidate): string => 'fila ' . $candidate['row'] . ': ' . implode(' | ', $candidate['cells']),
-            $top
-        );
-    }
-
-    private function readNumericNullable(Worksheet $sheet, int $rowNum, ?int $columnIndex, array &$details): ?float
-    {
-        if ($columnIndex === null || $columnIndex < 1) {
+        $value = trim($value);
+        if ($value === '') {
             return null;
         }
 
-        $ref = Coordinate::stringFromColumnIndex($columnIndex) . $rowNum;
-        $cell = $sheet->getCell($ref);
-        $rawValue = $cell->getValue();
-
-        if ((is_string($rawValue) && trim($rawValue) === '') || $rawValue === null) {
-            return null;
-        }
-
-        if (is_string($rawValue) && str_starts_with(trim($rawValue), '=')) {
-            try {
-                $calculated = $cell->getCalculatedValue();
-                $parsedCalc = $this->numberParser->parse($calculated);
-                if ($parsedCalc['is_numeric']) {
-                    return round((float) $parsedCalc['value'], 2);
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        $parsed = $this->numberParser->parse($rawValue);
-        if (!$parsed['is_numeric']) {
-            $parsedFormatted = $this->numberParser->parse($cell->getFormattedValue());
-            if ($parsedFormatted['is_numeric']) {
-                return round((float) $parsedFormatted['value'], 2);
-            }
-        }
-
-        if (!$parsed['is_numeric']) {
-            $details[] = $this->detail(
-                $rowNum,
-                $this->columnLabel($columnIndex),
-                'WARNING',
-                'NON_NUMERIC_VALUE',
-                'Valor no numérico; se usará NULL.',
-                is_scalar($rawValue) ? (string) $rawValue : null
-            );
-            return null;
-        }
-
-        return round((float) $parsed['value'], 2);
-    }
-
-    private function parsePeriodoYear(mixed $value): ?int
-    {
-        if (is_int($value) || is_float($value)) {
-            $digits = preg_replace('/\D+/', '', (string) (int) $value) ?? '';
+        if (preg_match('/^[-+]?\d+\s+\d+$/', $value) === 1) {
+            $value = str_replace(' ', '.', $value);
         } else {
-            $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+            $value = preg_replace('/\s+/', '', $value) ?? $value;
         }
 
-        if (strlen($digits) < 4) {
-            return null;
+        if (preg_match('/,\d{1,4}$/', $value) === 1) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        } elseif (substr_count($value, '.') > 1) {
+            $parts = explode('.', $value);
+            $decimal = array_pop($parts);
+            $value = implode('', $parts) . '.' . $decimal;
         }
 
-        $year = (int) substr($digits, 0, 4);
-        return ($year >= 1900 && $year <= 2500) ? $year : null;
-    }
-
-    private function cellText(Worksheet $sheet, int $columnIndex, int $rowNum): string
-    {
-        if ($columnIndex < 1 || $rowNum < 1) {
-            return '';
+        if (!is_numeric($value)) {
+            $parsed = $this->numberParser->parse($value);
+            if (($parsed['is_numeric'] ?? false) !== true) {
+                return null;
+            }
+            return round((float) ($parsed['value'] ?? 0), 4);
         }
 
-        return $this->normalizeText((string) $sheet->getCell(Coordinate::stringFromColumnIndex($columnIndex) . $rowNum)->getFormattedValue());
+        return round((float) $value, 4);
     }
 
-    private function columnLabel(int $columnIndex): string
+    private function buildParametroKey(string $name): string
     {
-        return $columnIndex > 0 ? Coordinate::stringFromColumnIndex($columnIndex) : '-';
-    }
-
-    private function normalizeCodigo(mixed $value): string
-    {
-        $text = $this->normalizeText((string) $value);
-        if ($text === '') {
-            return '';
-        }
-
-        return is_numeric($text) ? (string) (int) round((float) $text) : $text;
-    }
-
-    private function normalizeHeader(string $value): string
-    {
-        $text = strtoupper(trim($value));
-        $text = strtr($text, [
+        $key = strtoupper($this->normalizeText($name));
+        $key = strtr($key, [
             'Á' => 'A',
             'É' => 'E',
             'Í' => 'I',
             'Ó' => 'O',
             'Ú' => 'U',
-            'Ü' => 'U',
             'Ñ' => 'N',
         ]);
-        $text = preg_replace('/[^A-Z0-9_\-\s]/u', ' ', $text) ?? '';
-        return trim(preg_replace('/\s+/', ' ', $text) ?? '');
+        $key = preg_replace('/[^A-Z0-9]+/', '_', $key) ?? '';
+        $key = preg_replace('/_+/', '_', $key) ?? '';
+
+        return trim($key, '_');
     }
 
-    private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, string $usuario, array $counts, array $details, int $insertedCount, int $updatedCount): string
+    private function cellText(Worksheet $sheet, int $col, int $row): string
+    {
+        return $this->normalizeText((string) $sheet->getCell([$col, $row])->getFormattedValue());
+    }
+
+    private function storeJsonEvidence(array $rows, string $tipo, int $anio, string $sheetName, string $fileName, string $usuario, array $counts, array $details): string
     {
         $relativePath = 'var/import_store/produccion.json';
         $absolutePath = dirname(__DIR__, 2) . '/' . $relativePath;
@@ -539,10 +261,9 @@ class ExcelProduccionImportService
             'sheet_name' => $sheetName,
             'file_name' => $fileName,
             'usuario' => $usuario,
-            'inserted_count' => $insertedCount,
-            'updated_count' => $updatedCount,
             'counts' => $counts,
             'details' => $details,
+            'headers' => self::GRID_HEADERS,
             'rows' => $rows,
             'saved_at' => date('c'),
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -564,7 +285,7 @@ class ExcelProduccionImportService
 
     private function countBySeverity(array $details, string $severity): int
     {
-        return count(array_filter($details, static fn (array $detail): bool => ($detail['severity'] ?? '') === $severity));
+        return count(array_filter($details, static fn (array $detail): bool => strtoupper((string) ($detail['severity'] ?? '')) === strtoupper($severity)));
     }
 
     private function normalizeText(string $value): string

@@ -65,7 +65,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     <h6 class="mt-3">Preview</h6>
     <div class="table-responsive">
       <table class="table table-sm table-striped">
-        <thead><tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr></thead>
+        <thead id="previewHead"><tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr></thead>
         <tbody id="previewBody"></tbody>
       </table>
     </div>
@@ -135,6 +135,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const resultSummary = document.getElementById('resultSummary');
     const detailsBody = document.getElementById('detailsBody');
     const previewBody = document.getElementById('previewBody');
+    const previewHead = document.getElementById('previewHead');
     const resultAlert = document.getElementById('resultAlert');
     const detailsTabs = document.getElementById('detailsTabs');
     const showMoreDetailsBtn = document.getElementById('showMoreDetailsBtn');
@@ -219,14 +220,31 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       renderDetails();
 
       const preview = Array.isArray(payload.preview) ? payload.preview : [];
-      previewBody.innerHTML = preview.map((row) => `
-        <tr>
-          <td>${escapeHtml(row.periodo ?? '')}</td>
-          <td>${escapeHtml(row.codigo ?? '')}</td>
-          <td>${escapeHtml(row.nombre_cuenta ?? '')}</td>
-          <td>${Number((row.total_recalculado ?? row.total) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+      if (tab === 'produccion') {
+        if (previewHead) {
+          previewHead.innerHTML = '<tr><th>Año</th><th>Tipo</th><th>Parámetro</th><th>Valor</th></tr>';
+        }
+        previewBody.innerHTML = preview.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.ANIO ?? row.anio ?? '')}</td>
+            <td>${escapeHtml(row.TIPO ?? row.tipo ?? '')}</td>
+            <td>${escapeHtml(row.PARAMETRO_NOMBRE ?? row.parametro_nombre ?? row.PARAMETRO_KEY ?? '')}</td>
+            <td>${Number((row.VALOR ?? row.valor) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+      } else {
+        if (previewHead) {
+          previewHead.innerHTML = '<tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr>';
+        }
+        previewBody.innerHTML = preview.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.periodo ?? '')}</td>
+            <td>${escapeHtml(row.codigo ?? '')}</td>
+            <td>${escapeHtml(row.nombre_cuenta ?? '')}</td>
+            <td>${Number((row.total_recalculado ?? row.total) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+      }
     }
 
     function renderDetails() {
@@ -269,7 +287,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       excelGridBody.innerHTML = rows.map((row) => {
         return `<tr>${headers.map((h) => {
           const value = row[h] ?? '';
-          const isNumeric = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL','TOTAL_RECALCULADO'].includes(h);
+          const isNumeric = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL','TOTAL_RECALCULADO','VALOR'].includes(h);
           return `<td class="${isNumeric ? 'text-end' : 'text-nowrap'}">${isNumeric ? formatNumber(value) : escapeHtml(value)}</td>`;
         }).join('')}</tr>`;
       }).join('') || '<tr><td class="text-muted">Sin filas para mostrar.</td></tr>';
