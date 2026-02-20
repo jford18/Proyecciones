@@ -7,6 +7,7 @@ namespace App\controllers;
 use App\services\ExcelTemplateImportService;
 use App\services\ExcelIngresosImportService;
 use App\services\ExcelCostosImportService;
+use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ImportTemplateCatalog;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -23,6 +24,7 @@ class ExcelImportController
         private string $baseUploadDir,
         private ?ExcelIngresosImportService $ingresosService = null,
         private ?ExcelCostosImportService $costosService = null,
+        private ?ExcelGastosOperacionalesImportService $gastosOperacionalesService = null,
         private ?PresupuestoIngresosRepository $presupuestoIngresosRepository = null
     ) {
     }
@@ -87,7 +89,7 @@ class ExcelImportController
             return ['error' => 'Repositorio no disponible.', 'tab' => $tab, 'tipo' => $tipo, 'anio' => $anio];
         }
 
-        $tab = in_array($tab, ['ingresos', 'costos'], true) ? $tab : 'ingresos';
+        $tab = in_array($tab, ['ingresos', 'costos', 'gastos_operacionales'], true) ? $tab : 'ingresos';
         $anioResolved = $anio ?? $this->presupuestoIngresosRepository->findFirstAnioByTipoByTab($tab, $tipo);
 
         return [
@@ -106,7 +108,7 @@ class ExcelImportController
         }
 
         $tab = strtolower((string) ($_GET['tab'] ?? ''));
-        if (!in_array($tab, ['ingresos', 'costos'], true)) {
+        if (!in_array($tab, ['ingresos', 'costos', 'gastos_operacionales'], true)) {
             $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
         }
 
@@ -140,7 +142,7 @@ class ExcelImportController
 
         try {
             $tab = strtolower((string) ($_GET['tab'] ?? 'ingresos'));
-            if (!in_array($tab, ['ingresos', 'costos'], true)) {
+            if (!in_array($tab, ['ingresos', 'costos', 'gastos_operacionales'], true)) {
                 $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
             }
 
@@ -154,7 +156,11 @@ class ExcelImportController
             $columns = $this->ingresosGridColumns();
 
             $sheet = (new Spreadsheet())->getActiveSheet();
-            $sheet->setTitle($tab === 'costos' ? 'Costos' : 'Ingresos');
+            $sheet->setTitle(match ($tab) {
+                'costos' => 'Costos',
+                'gastos_operacionales' => 'Gastos operacionales',
+                default => 'Ingresos',
+            });
 
             $col = 1;
             foreach ($columns as $column) {
@@ -216,6 +222,9 @@ class ExcelImportController
         if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
             return $this->costosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
+        if (($template['id'] ?? '') === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
+            return $this->gastosOperacionalesService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+        }
         $result = $this->service->validate($uploaded['path'], $template);
 
         $summary = $result['summary'] ?? [
@@ -275,6 +284,9 @@ class ExcelImportController
         }
         if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
             return $this->costosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+        }
+        if (($template['id'] ?? '') === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
+            return $this->gastosOperacionalesService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
@@ -476,6 +488,8 @@ class ExcelImportController
                 $service = $this->ingresosService;
             } elseif ($templateId === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
                 $service = $this->costosService;
+            } elseif ($templateId === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
+                $service = $this->gastosOperacionalesService;
             } else {
                 $this->respondJson(['ok' => false, 'message' => 'Preview no soportado para esta pestaña.'], 400);
             }
