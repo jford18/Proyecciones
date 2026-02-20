@@ -34,7 +34,7 @@ class ImportTemplateCatalog
             ['id' => 'gastos_financieros', 'label' => 'Gastos financieros', 'sheet_name' => '4.- Gastos financieros', 'columns' => self::FIXED_HEADER],
             ['id' => 'otros_ingresos', 'label' => 'Otros ingresos', 'sheet_name' => '5.- Otros ingresos', 'columns' => self::FIXED_HEADER],
             ['id' => 'otros_egresos', 'label' => 'Otros egresos', 'sheet_name' => '6.- Otros egresos', 'columns' => self::FIXED_HEADER],
-            ['id' => 'produccion', 'label' => 'Produccion', 'sheet_name' => '7.-Produccion', 'columns' => self::FIXED_HEADER],
+            ['id' => 'produccion', 'label' => 'Produccion', 'sheet_name' => '7.- Produccion', 'columns' => self::FIXED_HEADER],
         ];
     }
 

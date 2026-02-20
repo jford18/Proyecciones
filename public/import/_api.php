@@ -8,7 +8,9 @@ use App\repositories\PresupuestoIngresosRepository;
 use App\services\ExcelCostosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
+use App\services\ExcelProduccionImportService;
 use App\services\ExcelOtrosIngresosImportService;
+use App\services\ExcelOtrosEgresosImportService;
 use App\services\ExcelIngresosImportService;
 use App\services\ExcelTemplateImportService;
 use App\services\ImportTemplateCatalog;
@@ -38,8 +40,10 @@ if (!function_exists('importApiController')) {
             new ExcelIngresosImportService($repo),
             new ExcelCostosImportService($repo),
             new ExcelOtrosIngresosImportService($repo),
+            new ExcelOtrosEgresosImportService($repo),
             new ExcelGastosOperacionalesImportService($repo),
             new ExcelGastosFinancierosImportService($repo),
+            new ExcelProduccionImportService($repo),
             $repo
         );
     }

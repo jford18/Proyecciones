@@ -21,6 +21,7 @@ use App\services\ExcelOtrosIngresosImportService;
 use App\services\ExcelOtrosEgresosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
+use App\services\ExcelProduccionImportService;
 use App\services\PgConsolidationService;
 use App\services\WorkflowService;
 use App\repositories\PresupuestoIngresosRepository;
@@ -50,6 +51,7 @@ $excelImportController = new ExcelImportController(
     new ExcelOtrosEgresosImportService($presupuestoIngresosRepository),
     new ExcelGastosOperacionalesImportService($presupuestoIngresosRepository),
     new ExcelGastosFinancierosImportService($presupuestoIngresosRepository),
+    new ExcelProduccionImportService($presupuestoIngresosRepository),
     $presupuestoIngresosRepository
 );
 $anexoController = new AnexoController($anexoRepo);
