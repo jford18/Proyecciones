@@ -6,6 +6,7 @@ use App\controllers\ExcelImportController;
 use App\db\Db;
 use App\repositories\PresupuestoIngresosRepository;
 use App\services\ExcelCostosImportService;
+use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelIngresosImportService;
 use App\services\ExcelTemplateImportService;
 use App\services\ImportTemplateCatalog;
@@ -34,6 +35,7 @@ if (!function_exists('importApiController')) {
             $config['upload_dir'],
             new ExcelIngresosImportService($repo),
             new ExcelCostosImportService($repo),
+            new ExcelGastosOperacionalesImportService($repo),
             $repo
         );
     }

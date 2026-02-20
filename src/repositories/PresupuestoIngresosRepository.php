@@ -11,6 +11,7 @@ class PresupuestoIngresosRepository
     private ?array $importLogColumns = null;
     private ?array $presupuestoIngresosColumns = null;
     private ?array $presupuestoCostosColumns = null;
+    private ?array $presupuestoGastosOperacionalesColumns = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -24,6 +25,11 @@ class PresupuestoIngresosRepository
     public function upsertCostosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         return $this->upsertRowsByTab('costos', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertGastosOperacionalesRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
+        return $this->upsertRowsByTab('gastos_operacionales', $tipo, $sheetName, $fileName, $usuario, $rows);
     }
 
     public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
@@ -223,6 +229,11 @@ class PresupuestoIngresosRepository
         return $this->findFirstAnioByTipoByTab('costos', $tipo);
     }
 
+    public function findFirstAnioByTipoGastosOperacionales(string $tipo): ?int
+    {
+        return $this->findFirstAnioByTipoByTab('gastos_operacionales', $tipo);
+    }
+
     public function findFirstAnioByTipoByTab(string $tab, string $tipo): ?int
     {
         $table = $this->tableByTab($tab);
@@ -245,6 +256,11 @@ class PresupuestoIngresosRepository
     public function fetchCostosRowsForGrid(string $tipo, int $anio): array
     {
         return $this->fetchRowsForGridByTab('costos', $tipo, $anio);
+    }
+
+    public function fetchGastosOperacionalesRowsForGrid(string $tipo, int $anio): array
+    {
+        return $this->fetchRowsForGridByTab('gastos_operacionales', $tipo, $anio);
     }
 
     public function fetchRowsForGridByTab(string $tab, string $tipo, int $anio): array
@@ -316,6 +332,9 @@ class PresupuestoIngresosRepository
         if ($tab === 'costos' && $this->presupuestoCostosColumns !== null) {
             return $this->presupuestoCostosColumns;
         }
+        if ($tab === 'gastos_operacionales' && $this->presupuestoGastosOperacionalesColumns !== null) {
+            return $this->presupuestoGastosOperacionalesColumns;
+        }
 
         $table = $this->tableByTab($tab);
         $stmt = $this->pdo->query('SHOW COLUMNS FROM ' . $table);
@@ -340,6 +359,11 @@ class PresupuestoIngresosRepository
             return $this->presupuestoCostosColumns;
         }
 
+        if ($tab === 'gastos_operacionales') {
+            $this->presupuestoGastosOperacionalesColumns = $columns;
+            return $this->presupuestoGastosOperacionalesColumns;
+        }
+
         $this->presupuestoIngresosColumns = $columns;
         return $this->presupuestoIngresosColumns;
     }
@@ -348,6 +372,7 @@ class PresupuestoIngresosRepository
     {
         return match (strtolower($tab)) {
             'costos' => 'PRESUPUESTO_COSTOS',
+            'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
             default => 'PRESUPUESTO_INGRESOS',
         };
     }
