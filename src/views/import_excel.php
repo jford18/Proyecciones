@@ -53,9 +53,12 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     <ul id="resultSummary"></ul>
     <div id="resultAlert"></div>
 
-    <div class="d-flex align-items-center justify-content-between mt-3">
+    <div class="d-flex align-items-center justify-content-between mt-3 gap-2">
       <h6 class="mb-0">Detalles</h6>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="openDetailsBtn" data-bs-toggle="modal" data-bs-target="#importDetailsModal">Ver detalles</button>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-success" id="viewExcelBtn" style="display:none;" href="#">Ver como Excel</a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="openDetailsBtn" data-bs-toggle="modal" data-bs-target="#importDetailsModal">Ver detalles</button>
+      </div>
     </div>
 
     <h6 class="mt-3">Preview</h6>
@@ -114,6 +117,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const resultAlert = document.getElementById('resultAlert');
     const detailsTabs = document.getElementById('detailsTabs');
     const showMoreDetailsBtn = document.getElementById('showMoreDetailsBtn');
+    const viewExcelBtn = document.getElementById('viewExcelBtn');
     let allDetails = [];
     let detailsFilter = 'all';
     let detailsLimit = 200;
@@ -156,6 +160,14 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         <li>Actualizadas: <strong>${updated}</strong></li>
         <li>Omitidas: <strong>${skipped}</strong></li>
       `;
+
+
+      if (viewExcelBtn && tab === 'ingresos') {
+        const selectedAnio = payload.anio ?? payload?.preview?.[0]?.periodo ?? '';
+        const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
+        viewExcelBtn.href = `?r=import-excel&action=view_excel&tab=ingresos&tipo=${encodeURIComponent(tipo)}${queryAnio}`;
+        viewExcelBtn.style.display = '';
+      }
 
       if (mode === 'execute' && inserted + updated === 0 && (counts.importable_rows ?? 0) > 0) {
         resultAlert.innerHTML = '<div class="alert alert-danger mb-0">No se guardaron filas importables.</div>';

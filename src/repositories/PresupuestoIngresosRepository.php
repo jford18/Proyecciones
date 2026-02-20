@@ -192,6 +192,48 @@ class PresupuestoIngresosRepository
         ]);
     }
 
+    public function findFirstAnioByTipo(string $tipo): ?int
+    {
+        $stmt = $this->pdo->prepare('SELECT ANIO FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo ORDER BY ANIO DESC LIMIT 1');
+        $stmt->execute(['tipo' => $tipo]);
+        $value = $stmt->fetchColumn();
+
+        if ($value === false || $value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    public function fetchIngresosRowsForGrid(string $tipo, int $anio): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                ANIO AS PERIODO,
+                CODIGO,
+                NOMBRE_CUENTA,
+                ENE,
+                FEB,
+                MAR,
+                ABR,
+                MAY,
+                JUN,
+                JUL,
+                AGO,
+                SEP,
+                OCT,
+                NOV,
+                DIC,
+                TOTAL
+            FROM PRESUPUESTO_INGRESOS
+            WHERE TIPO = :tipo AND ANIO = :anio
+            ORDER BY LENGTH(CODIGO), CODIGO'
+        );
+        $stmt->execute(['tipo' => $tipo, 'anio' => $anio]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
     private function getImportLogColumns(): array
     {
         if ($this->importLogColumns !== null) {

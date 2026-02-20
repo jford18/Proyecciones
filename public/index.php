@@ -34,11 +34,13 @@ $pgService = new PgConsolidationService($anexoRepo, __DIR__ . '/../var/cache', $
 $workflowService = new WorkflowService($anexoRepo, $logRepo, $pgService);
 $flujoService = new FlujoGeneratorService($flujoRepo, $pgMap);
 $importController = new ImportController(new ExcelAnexoImportService(), $anexoRepo, $logRepo, $proyectoRepo, $config['upload_dir']);
+$presupuestoIngresosRepository = new PresupuestoIngresosRepository($pdo);
 $excelImportController = new ExcelImportController(
     new ExcelTemplateImportService(),
     new ImportTemplateCatalog(),
     $config['upload_dir'],
-    new ExcelIngresosImportService(new PresupuestoIngresosRepository($pdo))
+    new ExcelIngresosImportService($presupuestoIngresosRepository),
+    $presupuestoIngresosRepository
 );
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($workflowService);
@@ -100,16 +102,31 @@ if (str_starts_with($route, 'import-excel/')) {
     handleImportApi($excelImportController, substr($route, strlen('import-excel/')) ?: '');
 }
 
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
 if ($route === 'import-excel') {
     $user = (string) ($_SESSION['user'] ?? 'local-user');
     $action = isset($_GET['action']) ? (string) $_GET['action'] : null;
+    if ($action === 'view_excel') {
+        $viewData = [
+            'route' => $route,
+            'flash' => $flash,
+            'activeProjectId' => $activeProjectId,
+            'projectOptions' => $projectOptions,
+            'activeTipo' => $activeTipo,
+            'importResult' => $_SESSION['import_result'] ?? null,
+        ];
+        unset($_SESSION['import_result']);
+        $viewData['excelView'] = $excelImportController->viewExcelPage($activeTipo, isset($_GET['anio']) ? (int) $_GET['anio'] : null);
+        $contentView = __DIR__ . '/../src/views/import_excel_view.php';
+        require __DIR__ . '/../src/views/layout.php';
+        exit;
+    }
     $excelImportController->handleActionRequest($action, $user);
 }
 
 $_SESSION['active_tipo'] = $activeTipo;
-
-$flash = $_SESSION['flash'] ?? null;
-unset($_SESSION['flash']);
 
 function redirectTo(string $route, array $query = []): never {
     header('Location: ?' . http_build_query(array_merge(['r' => $route], $query)));
