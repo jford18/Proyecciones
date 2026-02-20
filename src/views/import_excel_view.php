@@ -2,24 +2,26 @@
 $excelView = $excelView ?? [];
 $tipoView = (string) ($excelView['tipo'] ?? ($activeTipo ?? 'PRESUPUESTO'));
 $anioView = $excelView['anio'] ?? null;
+$tabView = (string) ($excelView['tab'] ?? ($_GET['tab'] ?? 'ingresos'));
+$tabLabel = ucfirst($tabView);
 $columnsView = is_array($excelView['columns'] ?? null) ? $excelView['columns'] : ['PERIODO','CODIGO','NOMBRE_CUENTA','ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'];
 ?>
-<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item"><a href="?r=import-excel&tab=ingresos&tipo=<?= urlencode($tipoView) ?>">Importar Excel</a></li><li class="breadcrumb-item active">Ver como Excel</li></ol></nav>
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item"><a href="?r=import-excel&tab=<?= urlencode($tabView) ?>&tipo=<?= urlencode($tipoView) ?>">Importar Excel</a></li><li class="breadcrumb-item active">Ver como Excel</li></ol></nav>
 
 <div class="card shadow-sm">
   <div class="card-body">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-      <h4 class="mb-0">Ingresos - Ver como Excel</h4>
+      <h4 class="mb-0"><?= htmlspecialchars($tabLabel) ?> - Ver como Excel</h4>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="?r=import-excel&tab=ingresos&tipo=<?= urlencode($tipoView) ?>">Volver</a>
-        <a class="btn btn-success" id="downloadExcelBtn" href="?r=import-excel&action=download_excel&tab=ingresos&tipo=<?= urlencode($tipoView) ?><?= $anioView ? '&anio=' . (int) $anioView : '' ?>">Descargar Excel</a>
+        <a class="btn btn-outline-secondary" href="?r=import-excel&tab=<?= urlencode($tabView) ?>&tipo=<?= urlencode($tipoView) ?>">Volver</a>
+        <a class="btn btn-success" id="downloadExcelBtn" href="?r=import-excel&action=export_xlsx&tab=<?= urlencode($tabView) ?>&tipo=<?= urlencode($tipoView) ?><?= $anioView ? '&anio=' . (int) $anioView : '' ?>">Descargar Excel</a>
       </div>
     </div>
 
     <form class="row g-2 align-items-end mb-3" method="get">
       <input type="hidden" name="r" value="import-excel">
       <input type="hidden" name="action" value="view_excel">
-      <input type="hidden" name="tab" value="ingresos">
+      <input type="hidden" name="tab" value="<?= htmlspecialchars($tabView) ?>">
       <input type="hidden" name="tipo" value="<?= htmlspecialchars($tipoView) ?>">
       <div class="col-md-3">
         <label class="form-label">Año</label>
@@ -67,6 +69,7 @@ $columnsView = is_array($excelView['columns'] ?? null) ? $excelView['columns'] :
 (function () {
   const tipo = <?= json_encode($tipoView, JSON_UNESCAPED_UNICODE) ?>;
   const anio = <?= json_encode($anioView, JSON_UNESCAPED_UNICODE) ?>;
+  const tab = <?= json_encode($tabView, JSON_UNESCAPED_UNICODE) ?>;
   const body = document.getElementById('excelGridBody');
   const alertBox = document.getElementById('excelGridAlert');
   const columns = <?= json_encode($columnsView, JSON_UNESCAPED_UNICODE) ?>;
@@ -88,7 +91,7 @@ $columnsView = is_array($excelView['columns'] ?? null) ? $excelView['columns'] :
   }
 
   async function loadRows() {
-    const url = `?r=import-excel&action=data_excel&tab=ingresos&tipo=${encodeURIComponent(tipo)}${anio ? `&anio=${encodeURIComponent(anio)}` : ''}`;
+    const url = `?r=import-excel&action=preview_db&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}${anio ? `&anio=${encodeURIComponent(anio)}` : ''}`;
     try {
       const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const payload = await res.json();

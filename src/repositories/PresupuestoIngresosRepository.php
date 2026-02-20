@@ -10,6 +10,7 @@ class PresupuestoIngresosRepository
 {
     private ?array $importLogColumns = null;
     private ?array $presupuestoIngresosColumns = null;
+    private ?array $presupuestoCostosColumns = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -17,14 +18,26 @@ class PresupuestoIngresosRepository
 
     public function upsertIngresosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
+        return $this->upsertRowsByTab('ingresos', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertCostosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
+        return $this->upsertRowsByTab('costos', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
         if ($rows === []) {
             return ['inserted_count' => 0, 'updated_count' => 0];
         }
 
+        $table = $this->tableByTab($tab);
+
         $inserted = 0;
         $updated = 0;
 
-        $columns = $this->getPresupuestoIngresosColumns();
+        $columns = $this->getPresupuestoColumnsByTab($tab);
         $insertColumns = [
             'TIPO' => 'tipo',
             'ANIO' => 'anio',
@@ -87,8 +100,8 @@ class PresupuestoIngresosRepository
         $columnSql = implode(', ', array_keys($insertColumns));
         $valuesSql = implode(', ', array_map(static fn (string $param): string => ':' . $param, array_values($insertColumns)));
         $updateSql = $updateSqlParts === [] ? '' : ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateSqlParts);
-        $upsertStmt = $this->pdo->prepare("INSERT INTO PRESUPUESTO_INGRESOS ({$columnSql}) VALUES ({$valuesSql}){$updateSql}");
-        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
+        $upsertStmt = $this->pdo->prepare("INSERT INTO {$table} ({$columnSql}) VALUES ({$valuesSql}){$updateSql}");
+        $existsStmt = $this->pdo->prepare("SELECT 1 FROM {$table} WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1");
 
         $this->pdo->beginTransaction();
 
@@ -202,7 +215,18 @@ class PresupuestoIngresosRepository
 
     public function findFirstAnioByTipo(string $tipo): ?int
     {
-        $stmt = $this->pdo->prepare('SELECT ANIO FROM PRESUPUESTO_INGRESOS WHERE TIPO = :tipo ORDER BY ANIO DESC LIMIT 1');
+        return $this->findFirstAnioByTipoByTab('ingresos', $tipo);
+    }
+
+    public function findFirstAnioByTipoCostos(string $tipo): ?int
+    {
+        return $this->findFirstAnioByTipoByTab('costos', $tipo);
+    }
+
+    public function findFirstAnioByTipoByTab(string $tab, string $tipo): ?int
+    {
+        $table = $this->tableByTab($tab);
+        $stmt = $this->pdo->prepare("SELECT ANIO FROM {$table} WHERE TIPO = :tipo ORDER BY ANIO DESC LIMIT 1");
         $stmt->execute(['tipo' => $tipo]);
         $value = $stmt->fetchColumn();
 
@@ -215,6 +239,17 @@ class PresupuestoIngresosRepository
 
     public function fetchIngresosRowsForGrid(string $tipo, int $anio): array
     {
+        return $this->fetchRowsForGridByTab('ingresos', $tipo, $anio);
+    }
+
+    public function fetchCostosRowsForGrid(string $tipo, int $anio): array
+    {
+        return $this->fetchRowsForGridByTab('costos', $tipo, $anio);
+    }
+
+    public function fetchRowsForGridByTab(string $tab, string $tipo, int $anio): array
+    {
+        $table = $this->tableByTab($tab);
         $stmt = $this->pdo->prepare(
             'SELECT
                 ANIO AS PERIODO,
@@ -233,7 +268,7 @@ class PresupuestoIngresosRepository
                 NOV,
                 DIC,
                 TOTAL
-            FROM PRESUPUESTO_INGRESOS
+            FROM ' . $table . '
             WHERE TIPO = :tipo AND ANIO = :anio
             ORDER BY LENGTH(CODIGO), CODIGO'
         );
@@ -265,11 +300,25 @@ class PresupuestoIngresosRepository
 
     private function getPresupuestoIngresosColumns(): array
     {
-        if ($this->presupuestoIngresosColumns !== null) {
+        return $this->getPresupuestoColumnsByTab('ingresos');
+    }
+
+    private function getPresupuestoCostosColumns(): array
+    {
+        return $this->getPresupuestoColumnsByTab('costos');
+    }
+
+    private function getPresupuestoColumnsByTab(string $tab): array
+    {
+        if ($tab === 'ingresos' && $this->presupuestoIngresosColumns !== null) {
             return $this->presupuestoIngresosColumns;
         }
+        if ($tab === 'costos' && $this->presupuestoCostosColumns !== null) {
+            return $this->presupuestoCostosColumns;
+        }
 
-        $stmt = $this->pdo->query('SHOW COLUMNS FROM PRESUPUESTO_INGRESOS');
+        $table = $this->tableByTab($tab);
+        $stmt = $this->pdo->query('SHOW COLUMNS FROM ' . $table);
         $rows = $stmt !== false ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         $columns = [];
         foreach ($rows as $row) {
@@ -282,12 +331,24 @@ class PresupuestoIngresosRepository
         $required = ['TIPO', 'ANIO', 'CODIGO'];
         foreach ($required as $column) {
             if (!isset($columns[$column])) {
-                throw new \RuntimeException('PRESUPUESTO_INGRESOS no tiene columna requerida: ' . $column);
+                throw new \RuntimeException($table . ' no tiene columna requerida: ' . $column);
             }
         }
 
-        $this->presupuestoIngresosColumns = $columns;
+        if ($tab === 'costos') {
+            $this->presupuestoCostosColumns = $columns;
+            return $this->presupuestoCostosColumns;
+        }
 
+        $this->presupuestoIngresosColumns = $columns;
         return $this->presupuestoIngresosColumns;
+    }
+
+    private function tableByTab(string $tab): string
+    {
+        return match (strtolower($tab)) {
+            'costos' => 'PRESUPUESTO_COSTOS',
+            default => 'PRESUPUESTO_INGRESOS',
+        };
     }
 }

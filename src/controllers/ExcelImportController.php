@@ -6,6 +6,7 @@ namespace App\controllers;
 
 use App\services\ExcelTemplateImportService;
 use App\services\ExcelIngresosImportService;
+use App\services\ExcelCostosImportService;
 use App\services\ImportTemplateCatalog;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -21,6 +22,7 @@ class ExcelImportController
         private ImportTemplateCatalog $catalog,
         private string $baseUploadDir,
         private ?ExcelIngresosImportService $ingresosService = null,
+        private ?ExcelCostosImportService $costosService = null,
         private ?PresupuestoIngresosRepository $presupuestoIngresosRepository = null
     ) {
     }
@@ -53,12 +55,22 @@ class ExcelImportController
         }
 
         if ($action === 'data_excel') {
-            $this->ingresosGridJson();
+            $this->previewDbJson();
             exit;
         }
 
         if ($action === 'download_excel') {
-            $this->downloadIngresosExcel();
+            $this->exportXlsx();
+            exit;
+        }
+
+        if ($action === 'preview_db') {
+            $this->previewDbJson();
+            exit;
+        }
+
+        if ($action === 'export_xlsx') {
+            $this->exportXlsx();
             exit;
         }
 
@@ -69,15 +81,17 @@ class ExcelImportController
         ], 404);
     }
 
-    public function viewExcelPage(string $tipo, ?int $anio): array
+    public function viewExcelPage(string $tab, string $tipo, ?int $anio): array
     {
         if ($this->presupuestoIngresosRepository === null) {
-            return ['error' => 'Repositorio no disponible.', 'tipo' => $tipo, 'anio' => $anio];
+            return ['error' => 'Repositorio no disponible.', 'tab' => $tab, 'tipo' => $tipo, 'anio' => $anio];
         }
 
-        $anioResolved = $anio ?? $this->presupuestoIngresosRepository->findFirstAnioByTipo($tipo);
+        $tab = in_array($tab, ['ingresos', 'costos'], true) ? $tab : 'ingresos';
+        $anioResolved = $anio ?? $this->presupuestoIngresosRepository->findFirstAnioByTipoByTab($tab, $tipo);
 
         return [
+            'tab' => $tab,
             'tipo' => $tipo,
             'anio' => $anioResolved,
             'columns' => $this->ingresosGridColumns(),
@@ -85,96 +99,106 @@ class ExcelImportController
         ];
     }
 
-    private function ingresosGridJson(): never
+    private function previewDbJson(): never
     {
         if ($this->presupuestoIngresosRepository === null) {
             $this->respondJson(['ok' => false, 'message' => 'Repositorio no disponible.'], 500);
         }
 
         $tab = strtolower((string) ($_GET['tab'] ?? ''));
-        if ($tab !== 'ingresos') {
+        if (!in_array($tab, ['ingresos', 'costos'], true)) {
             $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
         }
 
         $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
         $anio = $this->resolveAnioRequest([]);
         if ($anio === null) {
-            $anio = $this->presupuestoIngresosRepository->findFirstAnioByTipo($tipo);
+            $anio = $this->presupuestoIngresosRepository->findFirstAnioByTipoByTab($tab, $tipo);
             if ($anio === null) {
                 $this->respondJson(['ok' => false, 'message' => 'Seleccione año'], 400);
             }
         }
 
-        $rows = $this->presupuestoIngresosRepository->fetchIngresosRowsForGrid($tipo, $anio);
+        $rows = $this->presupuestoIngresosRepository->fetchRowsForGridByTab($tab, $tipo, $anio);
 
         $this->respondJson([
             'ok' => true,
             'rows' => $rows,
             'columns' => $this->ingresosGridColumns(),
+            'tab' => $tab,
             'tipo' => $tipo,
             'anio' => $anio,
             'total_rows' => count($rows),
         ]);
     }
 
-    private function downloadIngresosExcel(): never
+    private function exportXlsx(): never
     {
         if ($this->presupuestoIngresosRepository === null) {
-            http_response_code(500);
-            echo 'Repositorio no disponible.';
-            exit;
+            $this->respondJson(['ok' => false, 'message' => 'Repositorio no disponible.'], 500);
         }
 
-        $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
-        $anio = $this->resolveAnioRequest([]) ?? $this->presupuestoIngresosRepository->findFirstAnioByTipo($tipo);
-        if ($anio === null) {
-            http_response_code(400);
-            echo 'Seleccione año';
-            exit;
-        }
-
-        $rows = $this->presupuestoIngresosRepository->fetchIngresosRowsForGrid($tipo, $anio);
-        $columns = $this->ingresosGridColumns();
-
-        $sheet = (new Spreadsheet())->getActiveSheet();
-        $sheet->setTitle('Ingresos');
-
-        $col = 1;
-        foreach ($columns as $column) {
-            $sheet->setCellValueByColumnAndRow($col, 1, $column);
-            $col++;
-        }
-
-        $rowNum = 2;
-        foreach ($rows as $row) {
-            $sheet->setCellValueByColumnAndRow(1, $rowNum, (int) ($row['PERIODO'] ?? $anio));
-            $sheet->setCellValueByColumnAndRow(2, $rowNum, (string) ($row['CODIGO'] ?? ''));
-            $sheet->setCellValueByColumnAndRow(3, $rowNum, (string) ($row['NOMBRE_CUENTA'] ?? ''));
-            $m = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'];
-            $c = 4;
-            foreach ($m as $mm) {
-                $sheet->setCellValueByColumnAndRow($c, $rowNum, (float) ($row[$mm] ?? 0));
-                $c++;
+        try {
+            $tab = strtolower((string) ($_GET['tab'] ?? 'ingresos'));
+            if (!in_array($tab, ['ingresos', 'costos'], true)) {
+                $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
             }
-            $rowNum++;
-        }
 
-        $highest = $sheet->getHighestRow();
-        foreach (range('A', 'P') as $columnLetter) {
-            $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
-        }
-        if ($highest >= 2) {
-            $sheet->getStyle('D2:P' . $highest)->getNumberFormat()->setFormatCode('#,##0.00');
-        }
+            $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
+            $anio = $this->resolveAnioRequest([]) ?? $this->presupuestoIngresosRepository->findFirstAnioByTipoByTab($tab, $tipo);
+            if ($anio === null) {
+                $this->respondJson(['ok' => false, 'message' => 'Seleccione año'], 400);
+            }
 
-        $filename = sprintf('ingresos_%s_%d.xlsx', strtolower($tipo), $anio);
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
+            $rows = $this->presupuestoIngresosRepository->fetchRowsForGridByTab($tab, $tipo, $anio);
+            $columns = $this->ingresosGridColumns();
 
-        $writer = new XlsxWriter($sheet->getParent());
-        $writer->save('php://output');
-        exit;
+            $sheet = (new Spreadsheet())->getActiveSheet();
+            $sheet->setTitle($tab === 'costos' ? 'Costos' : 'Ingresos');
+
+            $col = 1;
+            foreach ($columns as $column) {
+                $sheet->setCellValueByColumnAndRow($col, 1, $column);
+                $col++;
+            }
+
+            $rowNum = 2;
+            foreach ($rows as $row) {
+                $sheet->setCellValueByColumnAndRow(1, $rowNum, (int) ($row['PERIODO'] ?? $anio));
+                $sheet->setCellValueByColumnAndRow(2, $rowNum, (string) ($row['CODIGO'] ?? ''));
+                $sheet->setCellValueByColumnAndRow(3, $rowNum, (string) ($row['NOMBRE_CUENTA'] ?? ''));
+                $m = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'];
+                $c = 4;
+                foreach ($m as $mm) {
+                    $sheet->setCellValueByColumnAndRow($c, $rowNum, (float) ($row[$mm] ?? 0));
+                    $c++;
+                }
+                $rowNum++;
+            }
+
+            $highest = $sheet->getHighestRow();
+            foreach (range('A', 'P') as $columnLetter) {
+                $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
+            }
+            if ($highest >= 2) {
+                $sheet->getStyle('D2:P' . $highest)->getNumberFormat()->setFormatCode('#,##0.00');
+            }
+
+            $filename = sprintf('%s_%s_%d.xlsx', $tab, strtolower($tipo), $anio);
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Cache-Control: max-age=0');
+
+            $writer = new XlsxWriter($sheet->getParent());
+            $writer->save('php://output');
+            exit;
+        } catch (\Throwable $e) {
+            $payload = $this->buildJsonErrorPayload($e);
+            if ($this->isLocalDebug()) {
+                $payload['debug'] = $e->getTraceAsString();
+            }
+            $this->respondJson($payload, 500);
+        }
     }
 
     private function ingresosGridColumns(): array
@@ -188,6 +212,9 @@ class ExcelImportController
         $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
             return $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+        }
+        if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
+            return $this->costosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->validate($uploaded['path'], $template);
 
@@ -245,6 +272,9 @@ class ExcelImportController
         $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
             return $this->ingresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+        }
+        if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
+            return $this->costosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
@@ -326,12 +356,14 @@ class ExcelImportController
             $response = $this->validate($_POST, $_FILES, $user);
             $this->logImport('VALIDATE END ok=true total_rows=' . (int) ($response['counts']['total_rows'] ?? 0));
             $this->respondJson($response);
-        } catch (\RuntimeException $e) {
-            $this->logImport('VALIDATE END ok=false status=400 error=' . $e->getMessage());
-            $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
         } catch (\Throwable $e) {
-            $this->logImport('VALIDATE END ok=false status=500 error=' . $e->getMessage());
-            $this->respondJson(['ok' => false, 'message' => 'Error interno al validar archivo.'], 500);
+            $status = $e instanceof \RuntimeException ? 400 : 500;
+            $this->logImport('VALIDATE END ok=false status=' . $status . ' error=' . $e->getMessage());
+            $payload = $this->buildJsonErrorPayload($e);
+            if ($this->isLocalDebug()) {
+                $payload['debug'] = $e->getTraceAsString();
+            }
+            $this->respondJson($payload, $status);
         }
     }
 
@@ -439,12 +471,17 @@ class ExcelImportController
 
         try {
             $template = $this->resolveTemplate($_POST);
-            if (($template['id'] ?? '') !== 'ingresos' || !$this->ingresosService instanceof ExcelIngresosImportService) {
-                $this->respondJson(['ok' => false, 'message' => 'Preview solo soportado para ingresos.'], 400);
+            $templateId = (string) ($template['id'] ?? '');
+            if ($templateId === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
+                $service = $this->ingresosService;
+            } elseif ($templateId === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
+                $service = $this->costosService;
+            } else {
+                $this->respondJson(['ok' => false, 'message' => 'Preview no soportado para esta pestaña.'], 400);
             }
 
             $uploaded = $this->saveUploadedExcel($_FILES);
-            $response = $this->ingresosService->previewGrid(
+            $response = $service->previewGrid(
                 $uploaded['path'],
                 (string) ($_POST['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
                 $this->resolveAnioRequest($_POST),
