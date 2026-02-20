@@ -93,6 +93,12 @@ if (str_starts_with($route, 'import-excel/')) {
     handleImportApi($excelImportController, substr($route, strlen('import-excel/')) ?: '');
 }
 
+if ($route === 'import-excel') {
+    $user = (string) ($_SESSION['user'] ?? 'local-user');
+    $action = isset($_GET['action']) ? (string) $_GET['action'] : null;
+    $excelImportController->handleActionRequest($action, $user);
+}
+
 $_SESSION['active_tipo'] = $activeTipo;
 
 $flash = $_SESSION['flash'] ?? null;
@@ -117,21 +123,6 @@ try {
         $_SESSION['import_result'] = $result;
         $_SESSION['flash'] = ['type' => 'success', 'text' => $result['message']];
         redirectTo($route, ['tipo' => $activeTipo]);
-    }
-
-    if ($route === 'import-excel' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $action = (string) ($_POST['action'] ?? 'validate');
-        $user = (string) ($_SESSION['user'] ?? 'local-user');
-        if ($action === 'validate') {
-            $result = $excelImportController->validate($_POST, $_FILES, $user);
-            $_SESSION['excel_validation_result'] = $result;
-            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Validación completada correctamente.'];
-        } else {
-            $result = $excelImportController->execute($_POST, $_FILES, $user);
-            $_SESSION['excel_execution_result'] = $result;
-            $_SESSION['flash'] = ['type' => 'success', 'text' => 'Importación completada.'];
-        }
-        redirectTo('import-excel', ['tipo' => $activeTipo]);
     }
 
     if ($route === 'consolidar-pg' && $_SERVER['REQUEST_METHOD'] === 'POST') {

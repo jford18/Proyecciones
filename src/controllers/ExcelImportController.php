@@ -23,6 +23,29 @@ class ExcelImportController
         return ['templates' => $this->catalog->templates()];
     }
 
+    public function handleActionRequest(?string $action, string $user): bool
+    {
+        if ($action === null || $action === '') {
+            return false;
+        }
+
+        if ($action === 'validate') {
+            $this->validateJson($user);
+            return true;
+        }
+
+        if ($action === 'execute') {
+            $this->executeJson($user);
+            return true;
+        }
+
+        $this->respondJson([
+            'ok' => false,
+            'message' => 'Action no encontrada',
+            'details' => ['action' => $action],
+        ], 404);
+    }
+
     public function validate(array $post, array $files, string $user): array
     {
         $template = $this->resolveTemplate($post);
@@ -134,6 +157,44 @@ class ExcelImportController
             'errors' => $entry['errors'],
         ];
         file_put_contents($file, json_encode($logs, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    private function validateJson(string $user): never
+    {
+        if ((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->respondJson(['ok' => false, 'message' => 'Método no permitido. Use POST.'], 400);
+        }
+
+        try {
+            $this->respondJson($this->validate($_POST, $_FILES, $user));
+        } catch (\RuntimeException $e) {
+            $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            $this->respondJson(['ok' => false, 'message' => 'Error interno al validar archivo.'], 500);
+        }
+    }
+
+    private function executeJson(string $user): never
+    {
+        if ((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->respondJson(['ok' => false, 'message' => 'Método no permitido. Use POST.'], 400);
+        }
+
+        try {
+            $this->respondJson($this->execute($_POST, $_FILES, $user));
+        } catch (\RuntimeException $e) {
+            $this->respondJson(['ok' => false, 'message' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            $this->respondJson(['ok' => false, 'message' => 'Error interno al importar archivo.'], 500);
+        }
+    }
+
+    private function respondJson(array $payload, int $status = 200): never
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code($status);
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+        exit;
     }
 
     private function resolveTemplate(array $post): array
