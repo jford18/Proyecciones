@@ -71,8 +71,13 @@ if (str_starts_with($path, '/import/')) {
         echo json_encode(['error' => 'Endpoint no encontrado'], JSON_UNESCAPED_UNICODE);
         exit;
     } catch (Throwable $e) {
-        http_response_code(422);
-        echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        $status = ($path === '/import/execute') ? 500 : 422;
+        http_response_code($status);
+        echo json_encode([
+            'ok' => false,
+            'message' => $e->getMessage(),
+            'details' => ['path' => $path, 'method' => (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')],
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 }

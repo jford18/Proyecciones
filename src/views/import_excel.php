@@ -8,19 +8,14 @@ foreach ($excelTemplates as $template) {
     }
 }
 $selectedTemplate ??= $excelTemplates[0] ?? null;
-$result = ($excelExecutionResult && ($excelExecutionResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelExecutionResult : ((($excelValidationResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelValidationResult : null);
-$isIngresosTab = (($selectedTemplate['id'] ?? '') === 'ingresos');
-$details = is_array($result['details'] ?? null) ? $result['details'] : [];
-$warningRows = (int) ($result['counts']['warning_rows'] ?? 0);
-$errorRows = (int) ($result['counts']['error_rows'] ?? 0);
-$detailsCount = count($details);
+$initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelExecutionResult : ((($excelValidationResult['template_id'] ?? '') === ($selectedTemplate['id'] ?? '')) ? $excelValidationResult : null);
 ?>
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Importaciones</li><li class="breadcrumb-item active">Importar Excel</li></ol></nav>
 
 <div class="card shadow-sm">
   <div class="card-body">
     <h4>Importar Excel por pestaña</h4>
-    <p class="text-muted mb-3">Seleccione una de las 7 pestañas oficiales, cargue un único archivo Excel y ejecute <strong>Validar</strong> o <strong>Importar</strong> para esa hoja específica.</p>
+    <p class="text-muted mb-3">Flujo AJAX: <strong>Validar</strong> y <strong>Importar</strong> consumen endpoints JSON sin recargar la página.</p>
 
     <ul class="nav nav-tabs mb-3">
       <?php foreach ($excelTemplates as $template): ?>
@@ -36,188 +31,169 @@ $detailsCount = count($details);
       <div class="alert alert-secondary py-2">
         Hoja objetivo: <strong><?= htmlspecialchars((string) $selectedTemplate['sheet_name']) ?></strong>
       </div>
-      <form method="post" action="?r=import-excel&tab=<?= urlencode($selectedTemplate['id']) ?>" enctype="multipart/form-data" class="row g-3">
-        <input type="hidden" name="template_id" value="<?= htmlspecialchars((string) $selectedTemplate['id']) ?>">
+      <form id="excelImportForm" enctype="multipart/form-data" class="row g-3">
+        <input type="hidden" id="templateId" name="template_id" value="<?= htmlspecialchars((string) $selectedTemplate['id']) ?>">
         <div class="col-md-8">
           <label class="form-label">Archivo Excel</label>
-          <input class="form-control" type="file" name="excel" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+          <input class="form-control" id="excelFile" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
         </div>
         <div class="col-md-4 d-flex align-items-end gap-2">
-          <button class="btn btn-outline-primary" name="action" value="validate" type="submit">Validar</button>
-          <button class="btn btn-primary" name="action" value="execute" type="submit" <?= ($isIngresosTab && $errorRows > 0) ? 'disabled title="No puedes importar mientras existan errores estructurales"' : '' ?>>Importar</button>
+          <button class="btn btn-outline-primary" id="validateBtn" type="button">Validar</button>
+          <button class="btn btn-primary" id="executeBtn" type="button">Importar</button>
         </div>
       </form>
     <?php endif; ?>
   </div>
 </div>
 
-<?php if ($result): ?>
-  <div class="card mt-3 shadow-sm"><div class="card-body">
-    <h5>Resultado (<?= isset($result['timestamp']) ? 'Importación' : 'Validación' ?>)</h5>
-    <p class="mb-2">Archivo: <strong><?= htmlspecialchars((string) ($result['file_name'] ?? '')) ?></strong></p>
-    <ul>
-      <li>Importables: <strong><?= (int) ($result['counts']['importable_rows'] ?? 0) ?></strong></li>
-      <li>Importadas con fórmula (valores calculados): <strong><?= (int) ($result['counts']['imported_formula_rows'] ?? 0) ?></strong></li>
-      <li>Omitidas (sin data calculada / sin datos): <strong><?= (int) ($result['counts']['skipped_formula_rows'] ?? 0) ?></strong></li>
-      <li>Errores por tipo/fila: <strong><?= (int) ($result['counts']['error_rows'] ?? 0) ?></strong></li>
-      <?php if ($isIngresosTab): ?>
-        <li>Warnings: <strong><?= (int) ($result['counts']['warning_rows'] ?? 0) ?></strong></li>
-      <?php endif; ?>
-      <?php if (isset($result['counts']['imported_rows'])): ?>
-        <li>Insertadas: <strong><?= (int) $result['counts']['imported_rows'] ?></strong></li>
-        <li>Actualizadas: <strong><?= (int) $result['counts']['updated_rows'] ?></strong></li>
-        <li>Omitidas: <strong><?= (int) $result['counts']['omitted_rows'] ?></strong></li>
-      <?php endif; ?>
-    </ul>
-    <?php if ($isIngresosTab): ?>
-      <button type="button" id="openIngresosDetails" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#ingresosDetailsModal" <?= $detailsCount === 0 ? 'disabled title="No hay detalles disponibles"' : '' ?>>Ver detalles</button>
-    <?php endif; ?>
+<div class="card mt-3 shadow-sm" id="resultCard" style="display:none;">
+  <div class="card-body">
+    <h5 id="resultTitle">Resultado</h5>
+    <p class="mb-2" id="resultFile"></p>
+    <ul id="resultSummary"></ul>
+    <div id="resultAlert"></div>
 
-    <?php if ($isIngresosTab && $errorRows > 0): ?>
-      <div class="alert alert-danger mt-3 mb-0">Hay errores estructurales. Debes corregirlos antes de importar.</div>
-    <?php elseif ($isIngresosTab && $warningRows > 0): ?>
-      <div class="alert alert-warning mt-3 mb-0">Se detectaron warnings. Puedes importar, pero revisa los detalles.</div>
-    <?php endif; ?>
+    <h6 class="mt-3">Detalles</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>Fila</th><th>Columna</th><th>Severidad</th><th>Mensaje</th><th>Valor</th></tr></thead>
+        <tbody id="detailsBody"></tbody>
+      </table>
+    </div>
 
-    <?php if (!empty($result['preview'])): ?>
-      <h6>Preview (máximo 20 filas importables)</h6>
-      <div class="table-responsive"><table class="table table-sm table-striped">
+    <h6 class="mt-3">Preview</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
         <thead><tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr></thead>
-        <tbody>
-          <?php foreach ($result['preview'] as $row): ?>
-            <tr>
-              <td><?= htmlspecialchars((string) ($row['periodo'] ?? '')) ?></td>
-              <td><?= htmlspecialchars((string) ($row['codigo'] ?? '')) ?></td>
-              <td><?= htmlspecialchars((string) ($row['nombre_cuenta'] ?? '')) ?></td>
-              <td><?= number_format((float) ($row['total'] ?? 0), 2, ',', '.') ?></td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table></div>
-    <?php endif; ?>
-  </div></div>
-<?php endif; ?>
-
-
-<?php if ($isIngresosTab && $result): ?>
-<div class="modal fade" id="ingresosDetailsModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Detalles de validación - Ingresos</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Filtros">
-          <button type="button" class="btn btn-outline-secondary details-filter active" data-filter="ALL">Todos</button>
-          <button type="button" class="btn btn-outline-danger details-filter" data-filter="ERROR">Errores</button>
-          <button type="button" class="btn btn-outline-warning details-filter" data-filter="WARNING">Warnings</button>
-          <button type="button" class="btn btn-outline-primary details-filter" data-filter="SKIP">Omitidas (sin valores calculados)</button>
-        </div>
-        <?php if ($detailsCount === 0): ?>
-          <div class="alert alert-secondary mb-0">No hay detalles disponibles.</div>
-        <?php else: ?>
-        <div class="table-responsive">
-          <table class="table table-sm table-striped">
-            <thead><tr><th>Fila</th><th>Columna</th><th>Severidad</th><th>Mensaje</th><th>Valor</th></tr></thead>
-            <tbody id="ingresosDetailsBody">
-              <?php foreach ($details as $index => $detail): ?>
-                <tr class="detail-row" data-severity="<?= htmlspecialchars((string) ($detail['severity'] ?? '')) ?>" data-index="<?= (int) $index ?>" style="display: <?= $index < 50 ? '' : 'none' ?>;">
-                  <td><?= (int) ($detail['row_num'] ?? 0) ?></td>
-                  <td><?= htmlspecialchars((string) ($detail['column'] ?? '')) ?></td>
-                  <td><?= htmlspecialchars((string) ($detail['severity'] ?? '')) ?></td>
-                  <td><?= htmlspecialchars((string) ($detail['message'] ?? '')) ?></td>
-                  <td><?= htmlspecialchars((string) ($detail['raw_value'] ?? '')) ?></td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
-        <?php if (count($details) > 50): ?>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="showMoreDetails">Mostrar más</button>
-        <?php endif; ?>
-        <?php endif; ?>
-      </div>
+        <tbody id="previewBody"></tbody>
+      </table>
     </div>
   </div>
 </div>
+
 <script>
   (function () {
-    const validationResult = {
-      summary: <?= json_encode($result['summary'] ?? null, JSON_UNESCAPED_UNICODE) ?>,
-      detailsCount: <?= (int) $detailsCount ?>,
-    };
-    console.log('[IMPORT_VALIDATE][INGRESOS] response:', validationResult);
-    console.log('[IMPORT_VALIDATE][INGRESOS] details length:', validationResult.detailsCount);
+    const tipo = <?= json_encode((string) ($activeTipo ?? 'PRESUPUESTO'), JSON_UNESCAPED_UNICODE) ?>;
+    const tab = <?= json_encode((string) ($selectedTemplate['id'] ?? 'ingresos'), JSON_UNESCAPED_UNICODE) ?>;
+    const form = document.getElementById('excelImportForm');
+    const fileInput = document.getElementById('excelFile');
+    const validateBtn = document.getElementById('validateBtn');
+    const executeBtn = document.getElementById('executeBtn');
+    const resultCard = document.getElementById('resultCard');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultFile = document.getElementById('resultFile');
+    const resultSummary = document.getElementById('resultSummary');
+    const detailsBody = document.getElementById('detailsBody');
+    const previewBody = document.getElementById('previewBody');
+    const resultAlert = document.getElementById('resultAlert');
 
-    const rows = Array.from(document.querySelectorAll('#ingresosDetailsBody .detail-row'));
-    const filters = Array.from(document.querySelectorAll('.details-filter'));
-    const showMoreBtn = document.getElementById('showMoreDetails');
-    let visibleLimit = 50;
-    let activeFilter = 'ALL';
-
-    const openDetailsBtn = document.getElementById('openIngresosDetails');
-    if (openDetailsBtn) {
-      openDetailsBtn.addEventListener('click', () => {
-        console.log('VER DETALLES click', validationResult.detailsCount);
-      });
+    function escapeHtml(text) {
+      return String(text ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
     }
 
-    function refreshRows() {
-      let shown = 0;
-      rows.forEach((row) => {
-        const severity = row.dataset.severity || '';
-        const matches = activeFilter === 'ALL' || severity === activeFilter;
-        if (matches && shown < visibleLimit) {
-          row.style.display = '';
-          shown++;
-        } else {
-          row.style.display = 'none';
+    function buildFormData() {
+      const file = fileInput?.files?.[0];
+      if (!file) {
+        throw new Error('Debes seleccionar un archivo Excel antes de continuar.');
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('template_id', tab);
+      fd.append('tipo', tipo);
+      return fd;
+    }
+
+    function renderResult(payload, mode) {
+      resultCard.style.display = '';
+      resultTitle.textContent = mode === 'execute' ? 'Resultado (Importación)' : 'Resultado (Validación)';
+      resultFile.innerHTML = `Archivo: <strong>${escapeHtml(payload.file_name || '')}</strong>`;
+      const counts = payload.counts || {};
+      const inserted = payload.inserted_count ?? counts.imported_rows ?? 0;
+      const updated = payload.updated_count ?? counts.updated_rows ?? 0;
+      const skipped = payload.skipped_count ?? counts.omitted_rows ?? 0;
+      const warning = payload.warning_count ?? counts.warning_rows ?? 0;
+      const errorRows = counts.error_rows ?? 0;
+
+      resultSummary.innerHTML = `
+        <li>Importables: <strong>${counts.importable_rows ?? counts.importables ?? 0}</strong></li>
+        <li>Warnings: <strong>${warning}</strong></li>
+        <li>Errores: <strong>${errorRows}</strong></li>
+        <li>Insertadas: <strong>${inserted}</strong></li>
+        <li>Actualizadas: <strong>${updated}</strong></li>
+        <li>Omitidas: <strong>${skipped}</strong></li>
+      `;
+
+      if (mode === 'execute' && inserted + updated === 0 && (counts.importable_rows ?? 0) > 0) {
+        resultAlert.innerHTML = '<div class="alert alert-danger mb-0">No se guardaron filas importables.</div>';
+      } else {
+        resultAlert.innerHTML = '';
+      }
+
+      const details = Array.isArray(payload.details) ? payload.details : [];
+      detailsBody.innerHTML = details.slice(0, 100).map((detail) => `
+        <tr>
+          <td>${escapeHtml(detail.row_num ?? '')}</td>
+          <td>${escapeHtml(detail.column ?? '')}</td>
+          <td>${escapeHtml(detail.severity ?? '')}</td>
+          <td>${escapeHtml(detail.message ?? '')}</td>
+          <td>${escapeHtml(detail.raw_value ?? '')}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="text-muted">Sin detalles.</td></tr>';
+
+      const preview = Array.isArray(payload.preview) ? payload.preview : [];
+      previewBody.innerHTML = preview.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.periodo ?? '')}</td>
+          <td>${escapeHtml(row.codigo ?? '')}</td>
+          <td>${escapeHtml(row.nombre_cuenta ?? '')}</td>
+          <td>${Number(row.total ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+    }
+
+    async function callImport(endpoint, mode) {
+      try {
+        const fd = buildFormData();
+        const response = await fetch(`${endpoint}?tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`, {
+          method: 'POST',
+          body: fd,
+        });
+        const payload = await response.json();
+        console.log(`[IMPORT_${mode.toUpperCase()}][${tab.toUpperCase()}] response:`, payload);
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.message || `Error HTTP ${response.status}`);
         }
-      });
-      if (showMoreBtn) {
-        const totalMatched = rows.filter((row) => activeFilter === 'ALL' || (row.dataset.severity || '') === activeFilter).length;
-        showMoreBtn.style.display = shown < totalMatched ? '' : 'none';
+        renderResult(payload, mode);
+      } catch (error) {
+        resultCard.style.display = '';
+        resultTitle.textContent = 'Error';
+        resultFile.textContent = '';
+        resultSummary.innerHTML = '';
+        detailsBody.innerHTML = '';
+        previewBody.innerHTML = '';
+        resultAlert.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(error.message || 'Error inesperado.')}</div>`;
       }
     }
 
-    filters.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        filters.forEach((item) => item.classList.remove('active'));
-        btn.classList.add('active');
-        activeFilter = btn.dataset.filter || 'ALL';
-        visibleLimit = 50;
-        refreshRows();
+    if (form) {
+      form.addEventListener('submit', (event) => event.preventDefault());
+    }
+    if (validateBtn) {
+      validateBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        callImport('/import/validate', 'validate');
       });
-    });
-
-    if (showMoreBtn) {
-      showMoreBtn.addEventListener('click', () => {
-        visibleLimit += 50;
-        refreshRows();
+    }
+    if (executeBtn) {
+      executeBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        callImport('/import/execute', 'execute');
       });
     }
 
-    refreshRows();
-
-    const importForm = document.querySelector('form[action*="import-excel"]');
-    if (importForm) {
-      importForm.addEventListener('submit', (event) => {
-        const submitter = event.submitter;
-        if (!submitter || submitter.value !== 'execute') {
-          return;
-        }
-        const hasErrors = <?= $errorRows > 0 ? 'true' : 'false' ?>;
-        const hasWarnings = <?= $warningRows > 0 ? 'true' : 'false' ?>;
-        if (hasErrors) {
-          event.preventDefault();
-          return;
-        }
-        if (hasWarnings && !window.confirm('Hay warnings, ¿deseas continuar?')) {
-          event.preventDefault();
-        }
-      });
+    const initialResult = <?= json_encode($initialResult, JSON_UNESCAPED_UNICODE) ?>;
+    if (initialResult && typeof initialResult === 'object') {
+      renderResult(initialResult, initialResult.timestamp ? 'execute' : 'validate');
     }
   })();
 </script>
-<?php endif; ?>
