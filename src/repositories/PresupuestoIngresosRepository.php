@@ -119,16 +119,12 @@ class PresupuestoIngresosRepository
             'DETAILS_JSON' => 'details_json',
             'COUNTS_JSON' => 'counts_json',
             'USUARIO' => 'usuario',
+            'HOJA_NOMBRE' => 'hoja_nombre',
+            'ARCHIVO_NOMBRE' => 'archivo_nombre',
         ];
 
-        if (isset($columns['HOJA_NOMBRE'])) {
-            $insertColumns['HOJA_NOMBRE'] = 'hoja_nombre';
-        }
         if (isset($columns['SHEET_NAME'])) {
             $insertColumns['SHEET_NAME'] = 'sheet_name';
-        }
-        if (isset($columns['ARCHIVO_NOMBRE'])) {
-            $insertColumns['ARCHIVO_NOMBRE'] = 'archivo_nombre';
         }
         if (isset($columns['FILE_NAME'])) {
             $insertColumns['FILE_NAME'] = 'file_name';
@@ -177,11 +173,11 @@ class PresupuestoIngresosRepository
             }
         }
 
-        if (!isset($columns['HOJA_NOMBRE']) && !isset($columns['SHEET_NAME'])) {
-            throw new \RuntimeException('IMPORT_LOG no tiene columna HOJA_NOMBRE ni SHEET_NAME.');
+        if (!isset($columns['HOJA_NOMBRE'])) {
+            throw new \RuntimeException('IMPORT_LOG no tiene columna HOJA_NOMBRE.');
         }
-        if (!isset($columns['ARCHIVO_NOMBRE']) && !isset($columns['FILE_NAME'])) {
-            throw new \RuntimeException('IMPORT_LOG no tiene columna ARCHIVO_NOMBRE ni FILE_NAME.');
+        if (!isset($columns['ARCHIVO_NOMBRE'])) {
+            throw new \RuntimeException('IMPORT_LOG no tiene columna ARCHIVO_NOMBRE.');
         }
 
         $this->importLogColumns = $columns;
