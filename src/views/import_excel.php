@@ -100,6 +100,26 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
   </div>
 </div>
 
+<div class="modal fade" id="excelGridModal" tabindex="-1" aria-labelledby="excelGridModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="excelGridModalLabel">Ver como Excel</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="excelGridAlert" class="mb-2"></div>
+        <div class="table-responsive" style="max-height: 70vh; overflow: auto;">
+          <table class="table table-sm table-bordered align-middle" id="excelGridTable">
+            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;"></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   (function () {
     const tipo = <?= json_encode((string) ($activeTipo ?? 'PRESUPUESTO'), JSON_UNESCAPED_UNICODE) ?>;
@@ -118,6 +138,11 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const detailsTabs = document.getElementById('detailsTabs');
     const showMoreDetailsBtn = document.getElementById('showMoreDetailsBtn');
     const viewExcelBtn = document.getElementById('viewExcelBtn');
+    const excelGridModalEl = document.getElementById('excelGridModal');
+    const excelGridAlert = document.getElementById('excelGridAlert');
+    const excelGridTable = document.getElementById('excelGridTable');
+    const excelGridHead = excelGridTable ? excelGridTable.querySelector('thead') : null;
+    const excelGridBody = excelGridTable ? excelGridTable.querySelector('tbody') : null;
     let allDetails = [];
     let detailsFilter = 'all';
     let detailsLimit = 200;
@@ -165,7 +190,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       if (viewExcelBtn && tab === 'ingresos') {
         const selectedAnio = payload.anio ?? payload?.preview?.[0]?.periodo ?? '';
         const queryAnio = selectedAnio ? `&anio=${encodeURIComponent(selectedAnio)}` : '';
-        viewExcelBtn.href = `?r=import-excel&action=view_excel&tab=ingresos&tipo=${encodeURIComponent(tipo)}${queryAnio}`;
+        viewExcelBtn.dataset.anio = String(selectedAnio || '');
         viewExcelBtn.style.display = '';
       }
 
@@ -213,6 +238,51 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       `).join('') || '<tr><td colspan="5" class="text-muted">Sin detalles.</td></tr>';
 
       showMoreDetailsBtn.style.display = filtered.length > detailsLimit ? '' : 'none';
+    }
+
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function renderExcelGrid(payload) {
+      const headers = Array.isArray(payload.headers) ? payload.headers : [];
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!excelGridHead || !excelGridBody) {
+        return;
+      }
+
+      excelGridHead.innerHTML = `<tr>${headers.map((h) => `<th class="text-nowrap">${escapeHtml(h)}</th>`).join('')}</tr>`;
+      excelGridBody.innerHTML = rows.map((row) => {
+        return `<tr>${headers.map((h) => {
+          const value = row[h] ?? '';
+          const isNumeric = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','TOTAL'].includes(h);
+          return `<td class="${isNumeric ? 'text-end' : 'text-nowrap'}">${isNumeric ? formatNumber(value) : escapeHtml(value)}</td>`;
+        }).join('')}</tr>`;
+      }).join('') || '<tr><td class="text-muted">Sin filas para mostrar.</td></tr>';
+    }
+
+    async function openExcelGridPreview() {
+      try {
+        const fd = buildFormData();
+        const endpointUrl = `?r=import-excel&action=preview_grid&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
+        const response = await fetch(endpointUrl, { method: 'POST', body: fd });
+        const raw = await response.text();
+        const payload = raw ? JSON.parse(raw) : {};
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.message || `Error HTTP ${response.status}`);
+        }
+
+        excelGridAlert.innerHTML = '';
+        renderExcelGrid(payload);
+        if (window.bootstrap && excelGridModalEl) {
+          window.bootstrap.Modal.getOrCreateInstance(excelGridModalEl).show();
+        }
+      } catch (error) {
+        if (excelGridAlert) {
+          excelGridAlert.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(error.message || 'No se pudo cargar preview')}</div>`;
+        }
+      }
     }
 
     async function callImport(action, mode) {
@@ -268,6 +338,13 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         callImport('validate', 'validate');
       });
     }
+    if (viewExcelBtn) {
+      viewExcelBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        openExcelGridPreview();
+      });
+    }
+
     if (executeBtn) {
       executeBtn.addEventListener('click', (event) => {
         event.preventDefault();
