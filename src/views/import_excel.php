@@ -53,12 +53,9 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     <ul id="resultSummary"></ul>
     <div id="resultAlert"></div>
 
-    <h6 class="mt-3">Detalles</h6>
-    <div class="table-responsive">
-      <table class="table table-sm table-striped">
-        <thead><tr><th>Fila</th><th>Columna</th><th>Severidad</th><th>Mensaje</th><th>Valor</th></tr></thead>
-        <tbody id="detailsBody"></tbody>
-      </table>
+    <div class="d-flex align-items-center justify-content-between mt-3">
+      <h6 class="mb-0">Detalles</h6>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="openDetailsBtn" data-bs-toggle="modal" data-bs-target="#importDetailsModal">Ver detalles</button>
     </div>
 
     <h6 class="mt-3">Preview</h6>
@@ -67,6 +64,35 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         <thead><tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr></thead>
         <tbody id="previewBody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal fade" id="importDetailsModal" tabindex="-1" aria-labelledby="importDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importDetailsModalLabel">Detalles de importación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" id="detailsTabs">
+          <li class="nav-item"><button class="nav-link active" type="button" data-filter="all">Todos</button></li>
+          <li class="nav-item"><button class="nav-link" type="button" data-filter="ERROR">Errores</button></li>
+          <li class="nav-item"><button class="nav-link" type="button" data-filter="WARNING">Warnings</button></li>
+          <li class="nav-item"><button class="nav-link" type="button" data-filter="FORMULA">Omitidas por fórmula</button></li>
+        </ul>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped">
+            <thead><tr><th>Fila</th><th>Columna</th><th>Severidad</th><th>Mensaje</th><th>Valor</th></tr></thead>
+            <tbody id="detailsBody"></tbody>
+          </table>
+        </div>
+        <div class="text-center mt-2">
+          <button class="btn btn-sm btn-outline-primary" id="showMoreDetailsBtn" type="button" style="display:none;">Mostrar más</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -86,6 +112,11 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const detailsBody = document.getElementById('detailsBody');
     const previewBody = document.getElementById('previewBody');
     const resultAlert = document.getElementById('resultAlert');
+    const detailsTabs = document.getElementById('detailsTabs');
+    const showMoreDetailsBtn = document.getElementById('showMoreDetailsBtn');
+    let allDetails = [];
+    let detailsFilter = 'all';
+    let detailsLimit = 200;
 
     function escapeHtml(text) {
       return String(text ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
@@ -132,16 +163,10 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         resultAlert.innerHTML = '';
       }
 
-      const details = Array.isArray(payload.details) ? payload.details : [];
-      detailsBody.innerHTML = details.slice(0, 100).map((detail) => `
-        <tr>
-          <td>${escapeHtml(detail.row_num ?? '')}</td>
-          <td>${escapeHtml(detail.column ?? '')}</td>
-          <td>${escapeHtml(detail.severity ?? '')}</td>
-          <td>${escapeHtml(detail.message ?? '')}</td>
-          <td>${escapeHtml(detail.raw_value ?? '')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="5" class="text-muted">Sin detalles.</td></tr>';
+      allDetails = Array.isArray(payload.details) ? payload.details : [];
+      detailsFilter = 'all';
+      detailsLimit = 200;
+      renderDetails();
 
       const preview = Array.isArray(payload.preview) ? payload.preview : [];
       previewBody.innerHTML = preview.map((row) => `
@@ -152,6 +177,30 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
           <td>${Number(row.total ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         </tr>
       `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+    }
+
+    function renderDetails() {
+      let filtered = allDetails;
+      if (detailsFilter === 'ERROR') {
+        filtered = allDetails.filter((detail) => String(detail.severity || '').toUpperCase() === 'ERROR');
+      } else if (detailsFilter === 'WARNING') {
+        filtered = allDetails.filter((detail) => String(detail.severity || '').toUpperCase() === 'WARNING');
+      } else if (detailsFilter === 'FORMULA') {
+        filtered = allDetails.filter((detail) => ['NO_CALCULATED_VALUES', 'FORMULA_NOT_CALCULABLE', 'FORMULA_CALCULATED'].includes(String(detail.code || '').toUpperCase()));
+      }
+
+      const visible = filtered.slice(0, detailsLimit);
+      detailsBody.innerHTML = visible.map((detail) => `
+        <tr>
+          <td>${escapeHtml(detail.row_num ?? '')}</td>
+          <td>${escapeHtml(detail.column ?? '')}</td>
+          <td>${escapeHtml(detail.severity ?? '')}</td>
+          <td>${escapeHtml(detail.message ?? '')}</td>
+          <td>${escapeHtml(detail.raw_value ?? '')}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="text-muted">Sin detalles.</td></tr>';
+
+      showMoreDetailsBtn.style.display = filtered.length > detailsLimit ? '' : 'none';
     }
 
     async function callImport(action, mode) {
@@ -211,6 +260,28 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       executeBtn.addEventListener('click', (event) => {
         event.preventDefault();
         callImport('execute', 'execute');
+      });
+    }
+
+
+    if (detailsTabs) {
+      detailsTabs.addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-filter]');
+        if (!btn) {
+          return;
+        }
+        detailsTabs.querySelectorAll('button[data-filter]').forEach((item) => item.classList.remove('active'));
+        btn.classList.add('active');
+        detailsFilter = btn.dataset.filter || 'all';
+        detailsLimit = 200;
+        renderDetails();
+      });
+    }
+
+    if (showMoreDetailsBtn) {
+      showMoreDetailsBtn.addEventListener('click', () => {
+        detailsLimit += 200;
+        renderDetails();
       });
     }
 
