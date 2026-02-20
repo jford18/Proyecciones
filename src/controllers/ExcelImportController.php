@@ -11,6 +11,7 @@ use App\services\ExcelOtrosIngresosImportService;
 use App\services\ExcelOtrosEgresosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
+use App\services\ExcelProduccionImportService;
 use App\services\ImportTemplateCatalog;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -31,6 +32,7 @@ class ExcelImportController
         private ?ExcelOtrosEgresosImportService $otrosEgresosService = null,
         private ?ExcelGastosOperacionalesImportService $gastosOperacionalesService = null,
         private ?ExcelGastosFinancierosImportService $gastosFinancierosService = null,
+        private ?ExcelProduccionImportService $produccionService = null,
         private ?PresupuestoIngresosRepository $presupuestoIngresosRepository = null
     ) {
     }
@@ -110,7 +112,7 @@ class ExcelImportController
                 'anio' => $anio,
                 'headers' => [],
                 'rows' => [],
-                'message' => 'No existe un registro en IMPORT_LOG para la pestaña y tipo seleccionados.',
+                'message' => 'No hay datos para mostrar',
             ];
         }
 
@@ -124,7 +126,7 @@ class ExcelImportController
                 'sheet_name' => (string) ($log['SHEET_NAME'] ?? $log['HOJA_NOMBRE'] ?? ''),
                 'headers' => [],
                 'rows' => [],
-                'message' => 'El último IMPORT_LOG no tiene JSON_PATH válido.',
+                'message' => 'No hay datos para mostrar',
             ];
         }
 
@@ -139,7 +141,7 @@ class ExcelImportController
                 'json_path' => $jsonPath,
                 'headers' => [],
                 'rows' => [],
-                'message' => 'No existe el archivo JSON en disco: ' . $jsonPath,
+                'message' => 'No hay datos para mostrar',
             ];
         }
 
@@ -155,7 +157,7 @@ class ExcelImportController
                 'json_path' => $jsonPath,
                 'headers' => [],
                 'rows' => [],
-                'message' => 'No se pudo leer/decodificar el JSON guardado.',
+                'message' => 'No hay datos para mostrar',
             ];
         }
 
@@ -205,6 +207,9 @@ class ExcelImportController
         $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
         $anio = isset($_GET['anio']) ? (int) $_GET['anio'] : null;
         $excelView = $this->viewExcelPage($tab, $tipo, $anio);
+        if (($excelView['headers'] ?? []) === [] && ($excelView['rows'] ?? []) === [] && trim((string) ($excelView['message'] ?? '')) === '') {
+            $excelView['message'] = 'No hay datos para mostrar';
+        }
 
         header('Content-Type: text/html; charset=utf-8');
         require dirname(__DIR__) . '/views/import_excel_view.php';
@@ -218,7 +223,7 @@ class ExcelImportController
         }
 
         $tab = strtolower((string) ($_GET['tab'] ?? ''));
-        if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros'], true)) {
+        if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion'], true)) {
             $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
         }
 
@@ -252,7 +257,7 @@ class ExcelImportController
 
         try {
             $tab = strtolower((string) ($_GET['tab'] ?? 'ingresos'));
-            if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros'], true)) {
+            if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion'], true)) {
                 $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
             }
 
@@ -272,6 +277,7 @@ class ExcelImportController
                 'otros_egresos' => 'Otros egresos',
                 'gastos_operacionales' => 'Gastos operacionales',
                 'gastos_financieros' => 'Gastos financieros',
+                'produccion' => 'Produccion',
                 default => 'Ingresos',
             });
 
@@ -367,6 +373,12 @@ class ExcelImportController
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
+        if (($template['id'] ?? '') === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
+            $result = $this->produccionService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_PRODUCCION';
+            $result['json_path'] = $result['json_path'] ?? null;
+            return $result;
+        }
         $result = $this->service->validate($uploaded['path'], $template);
 
         $summary = $result['summary'] ?? [
@@ -441,6 +453,9 @@ class ExcelImportController
         }
         if (($template['id'] ?? '') === 'gastos_financieros' && $this->gastosFinancierosService instanceof ExcelGastosFinancierosImportService) {
             return $this->gastosFinancierosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+        }
+        if (($template['id'] ?? '') === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
+            return $this->produccionService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
@@ -652,6 +667,8 @@ class ExcelImportController
                 $service = $this->gastosOperacionalesService;
             } elseif ($templateId === 'gastos_financieros' && $this->gastosFinancierosService instanceof ExcelGastosFinancierosImportService) {
                 $service = $this->gastosFinancierosService;
+            } elseif ($templateId === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
+                $service = $this->produccionService;
             } else {
                 $this->respondJson(['ok' => false, 'message' => 'Preview no soportado para esta pestaña.'], 400);
             }

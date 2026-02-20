@@ -15,6 +15,7 @@ class PresupuestoIngresosRepository
     private ?array $presupuestoOtrosEgresosColumns = null;
     private ?array $presupuestoGastosOperacionalesColumns = null;
     private ?array $presupuestoGastosFinancierosColumns = null;
+    private ?array $presupuestoProduccionColumns = null;
 
     public function __construct(private PDO $pdo)
     {
@@ -177,6 +178,139 @@ class PresupuestoIngresosRepository
     public function upsertGastosFinancierosRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         return $this->upsertRowsByTab('gastos_financieros', $tipo, $sheetName, $fileName, $usuario, $rows);
+    }
+
+    public function upsertProduccionRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
+    {
+        if ($rows === []) {
+            return ['inserted_count' => 0, 'updated_count' => 0];
+        }
+
+        $inserted = 0;
+        $updated = 0;
+
+        $sql = 'INSERT INTO PRESUPUESTO_PRODUCCION (
+            TIPO,
+            ANIO,
+            PERIODO,
+            CODIGO,
+            NOMBRE_CUENTA,
+            ENE,
+            FEB,
+            MAR,
+            ABR,
+            MAY,
+            JUN,
+            JUL,
+            AGO,
+            SEP,
+            OCT,
+            NOV,
+            DIC,
+            TOTAL_RECALCULADO,
+            ARCHIVO_NOMBRE,
+            HOJA_NOMBRE,
+            USUARIO_CARGA,
+            FECHA_CARGA
+        ) VALUES (
+            :TIPO,
+            :ANIO,
+            :PERIODO,
+            :CODIGO,
+            :NOMBRE_CUENTA,
+            :ENE,
+            :FEB,
+            :MAR,
+            :ABR,
+            :MAY,
+            :JUN,
+            :JUL,
+            :AGO,
+            :SEP,
+            :OCT,
+            :NOV,
+            :DIC,
+            :TOTAL_RECALCULADO,
+            :ARCHIVO_NOMBRE,
+            :HOJA_NOMBRE,
+            :USUARIO_CARGA,
+            CURRENT_TIMESTAMP
+        )
+        ON DUPLICATE KEY UPDATE
+            NOMBRE_CUENTA = VALUES(NOMBRE_CUENTA),
+            ENE = VALUES(ENE),
+            FEB = VALUES(FEB),
+            MAR = VALUES(MAR),
+            ABR = VALUES(ABR),
+            MAY = VALUES(MAY),
+            JUN = VALUES(JUN),
+            JUL = VALUES(JUL),
+            AGO = VALUES(AGO),
+            SEP = VALUES(SEP),
+            OCT = VALUES(OCT),
+            NOV = VALUES(NOV),
+            DIC = VALUES(DIC),
+            TOTAL_RECALCULADO = VALUES(TOTAL_RECALCULADO),
+            ARCHIVO_NOMBRE = VALUES(ARCHIVO_NOMBRE),
+            HOJA_NOMBRE = VALUES(HOJA_NOMBRE),
+            USUARIO_CARGA = VALUES(USUARIO_CARGA),
+            FECHA_CARGA = CURRENT_TIMESTAMP';
+
+        $upsertStmt = $this->pdo->prepare($sql);
+        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_PRODUCCION WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1');
+
+        $this->pdo->beginTransaction();
+
+        try {
+            foreach ($rows as $row) {
+                $params = [
+                    'TIPO' => $tipo,
+                    'ANIO' => (int) ($row['anio'] ?? 0),
+                    'PERIODO' => (int) ($row['periodo'] ?? $row['anio'] ?? 0),
+                    'CODIGO' => (string) ($row['codigo'] ?? ''),
+                    'NOMBRE_CUENTA' => (string) ($row['nombre_cuenta'] ?? ''),
+                    'ENE' => $row['ene'] ?? null,
+                    'FEB' => $row['feb'] ?? null,
+                    'MAR' => $row['mar'] ?? null,
+                    'ABR' => $row['abr'] ?? null,
+                    'MAY' => $row['may'] ?? null,
+                    'JUN' => $row['jun'] ?? null,
+                    'JUL' => $row['jul'] ?? null,
+                    'AGO' => $row['ago'] ?? null,
+                    'SEP' => $row['sep'] ?? null,
+                    'OCT' => $row['oct'] ?? null,
+                    'NOV' => $row['nov'] ?? null,
+                    'DIC' => $row['dic'] ?? null,
+                    'TOTAL_RECALCULADO' => (float) ($row['total_recalculado'] ?? 0),
+                    'ARCHIVO_NOMBRE' => $fileName,
+                    'HOJA_NOMBRE' => $sheetName,
+                    'USUARIO_CARGA' => $usuario,
+                ];
+
+                $existsStmt->execute([
+                    'tipo' => $tipo,
+                    'anio' => (int) ($row['anio'] ?? 0),
+                    'codigo' => (string) ($row['codigo'] ?? ''),
+                ]);
+                $alreadyExists = $existsStmt->fetchColumn() !== false;
+
+                $upsertStmt->execute($params);
+                if ($alreadyExists) {
+                    $updated++;
+                } else {
+                    $inserted++;
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['inserted_count' => $inserted, 'updated_count' => $updated];
     }
 
     public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
@@ -396,6 +530,11 @@ class PresupuestoIngresosRepository
         return $this->findFirstAnioByTipoByTab('gastos_financieros', $tipo);
     }
 
+    public function findFirstAnioByTipoProduccion(string $tipo): ?int
+    {
+        return $this->findFirstAnioByTipoByTab('produccion', $tipo);
+    }
+
     public function findFirstAnioByTipoByTab(string $tab, string $tipo): ?int
     {
         $table = $this->tableByTab($tab);
@@ -440,9 +579,16 @@ class PresupuestoIngresosRepository
         return $this->fetchRowsForGridByTab('gastos_financieros', $tipo, $anio);
     }
 
+    public function fetchProduccionRowsForGrid(string $tipo, int $anio): array
+    {
+        return $this->fetchRowsForGridByTab('produccion', $tipo, $anio);
+    }
+
     public function fetchRowsForGridByTab(string $tab, string $tipo, int $anio): array
     {
         $table = $this->tableByTab($tab);
+        $columns = $this->getPresupuestoColumnsByTab($tab);
+        $totalColumn = isset($columns['TOTAL_RECALCULADO']) ? 'TOTAL_RECALCULADO' : 'TOTAL';
         $stmt = $this->pdo->prepare(
             'SELECT
                 ANIO AS PERIODO,
@@ -460,8 +606,8 @@ class PresupuestoIngresosRepository
                 OCT,
                 NOV,
                 DIC,
-                TOTAL,
-                TOTAL AS TOTAL_RECALCULADO
+                ' . $totalColumn . ' AS TOTAL,
+                ' . $totalColumn . ' AS TOTAL_RECALCULADO
             FROM ' . $table . '
             WHERE TIPO = :tipo AND ANIO = :anio
             ORDER BY LENGTH(CODIGO), CODIGO'
@@ -539,6 +685,9 @@ class PresupuestoIngresosRepository
         if ($tab === 'gastos_financieros' && $this->presupuestoGastosFinancierosColumns !== null) {
             return $this->presupuestoGastosFinancierosColumns;
         }
+        if ($tab === 'produccion' && $this->presupuestoProduccionColumns !== null) {
+            return $this->presupuestoProduccionColumns;
+        }
 
         $table = $this->tableByTab($tab);
         $stmt = $this->pdo->query('SHOW COLUMNS FROM ' . $table);
@@ -583,6 +732,11 @@ class PresupuestoIngresosRepository
             return $this->presupuestoGastosFinancierosColumns;
         }
 
+        if ($tab === 'produccion') {
+            $this->presupuestoProduccionColumns = $columns;
+            return $this->presupuestoProduccionColumns;
+        }
+
         $this->presupuestoIngresosColumns = $columns;
         return $this->presupuestoIngresosColumns;
     }
@@ -595,6 +749,7 @@ class PresupuestoIngresosRepository
             'otros_egresos' => 'PRESUPUESTO_OTROS_EGRESOS',
             'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
             'gastos_financieros' => 'PRESUPUESTO_GASTOS_FINANCIEROS',
+            'produccion' => 'PRESUPUESTO_PRODUCCION',
             default => 'PRESUPUESTO_INGRESOS',
         };
     }
