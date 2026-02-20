@@ -151,17 +151,27 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
     }
 
-    async function callImport(endpoint, mode) {
+    async function callImport(action, mode) {
+      const endpointUrl = `?r=${encodeURIComponent(`import-excel/${action}`)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
       try {
         const fd = buildFormData();
-        const response = await fetch(`${endpoint}?tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`, {
+        const response = await fetch(endpointUrl, {
           method: 'POST',
           body: fd,
         });
-        const payload = await response.json();
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        const rawBody = await response.text();
+        let payload = null;
+        if (contentType.includes('application/json')) {
+          payload = rawBody ? JSON.parse(rawBody) : {};
+        } else {
+          throw new Error(`Endpoint devolvió HTML o texto no JSON (HTTP ${response.status}). URL: ${endpointUrl}`);
+        }
+
         console.log(`[IMPORT_${mode.toUpperCase()}][${tab.toUpperCase()}] response:`, payload);
         if (!response.ok || payload.ok === false) {
-          throw new Error(payload.message || `Error HTTP ${response.status}`);
+          const message = payload?.message || `Error HTTP ${response.status}`;
+          throw new Error(`${message}. URL: ${endpointUrl}`);
         }
         renderResult(payload, mode);
       } catch (error) {
@@ -181,13 +191,13 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     if (validateBtn) {
       validateBtn.addEventListener('click', (event) => {
         event.preventDefault();
-        callImport('/import/validate', 'validate');
+        callImport('validate', 'validate');
       });
     }
     if (executeBtn) {
       executeBtn.addEventListener('click', (event) => {
         event.preventDefault();
-        callImport('/import/execute', 'execute');
+        callImport('execute', 'execute');
       });
     }
 
