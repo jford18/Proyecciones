@@ -35,7 +35,7 @@ try {
 
         $excelRow = 2;
         foreach ($payload['rows'] as $row) {
-            $data = [(string) ($row['CODE'] ?? ''), (string) ($row['DESC'] ?? '')];
+            $data = [(string) ($row['CODE'] ?? ''), (string) ($row['DESCRIPCION'] ?? '')];
             foreach ($months as $month) {
                 $data[] = (float) ($row[$month] ?? 0);
                 $data[] = (float) ($row[$month . '_PCT'] ?? 0);

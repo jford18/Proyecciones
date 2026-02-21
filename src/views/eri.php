@@ -64,7 +64,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       tr.appendChild(tdCode);
 
       const tdDesc = document.createElement('td');
-      tdDesc.textContent = row.DESC || '';
+      tdDesc.textContent = row.DESCRIPCION || '';
       tr.appendChild(tdDesc);
 
       months.forEach((month) => {
