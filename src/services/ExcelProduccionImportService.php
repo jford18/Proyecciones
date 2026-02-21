@@ -14,7 +14,8 @@ class ExcelProduccionImportService
     private const SHEET_NAME = '7.-Produccion';
     private const GRID_HEADERS = ['PERIODO', 'CODIGO', 'NOMBRE_CUENTA', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'TOTAL_RECALCULADO'];
     private const MONTH_KEYS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    private const HEADER_SCAN_LIMIT = 30;
+    private const HEADER_SCAN_LIMIT = 40;
+    private const CONSECUTIVE_EMPTY_LIMIT = 5;
     private const HEADER_ALIASES = [
         'periodo' => ['PERIODO'],
         'codigo' => ['CODIGO'],
@@ -149,15 +150,19 @@ class ExcelProduccionImportService
 
         $headerInfo = $this->findHeaderRowAndMap($sheet, min(self::HEADER_SCAN_LIMIT, $highestRow), $highestColumnIndex);
         if ($headerInfo === null) {
-            throw new \RuntimeException('No se encontraron encabezados requeridos (PERIODO y CODIGO) en las primeras ' . self::HEADER_SCAN_LIMIT . ' filas.');
+            throw new \RuntimeException('No se encontró encabezado con PERIODO y CODIGO en la hoja de Producción.');
         }
 
         $rows = [];
         $details = [];
         $lastPeriodo = null;
         $lastAnio = $anioRequest;
+        $consecutiveEmpty = 0;
+        $totalRows = 0;
 
         for ($rowNum = $headerInfo['row'] + 1; $rowNum <= $highestRow; $rowNum++) {
+            $totalRows++;
+
             $periodoRaw = $this->cellText($sheet, $headerInfo['map']['periodo'], $rowNum);
             $codigo = $this->normalizeCodigo($this->cellText($sheet, $headerInfo['map']['codigo'], $rowNum));
             $nombre = $this->cellText($sheet, $headerInfo['map']['nombre_cuenta'] ?? 0, $rowNum);
@@ -169,12 +174,19 @@ class ExcelProduccionImportService
                     $lastAnio = $anio;
                 }
             }
-
             $periodo = $periodoRaw !== '' ? $periodoRaw : ($lastPeriodo ?? '');
-            if ($periodo === '' && $codigo === '' && $nombre === '') {
+
+            $isEmptyStructural = ($periodoRaw === '' && $codigo === '' && $nombre === '');
+            if ($isEmptyStructural) {
+                $consecutiveEmpty++;
+                if ($consecutiveEmpty >= self::CONSECUTIVE_EMPTY_LIMIT) {
+                    break;
+                }
                 $details[] = $this->detail($rowNum, '-', 'WARNING', 'EMPTY_ROW', 'Fila vacía; se omite.');
                 continue;
             }
+
+            $consecutiveEmpty = 0;
 
             if ($codigo === '') {
                 $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['codigo']), 'WARNING', 'EMPTY_CODIGO', 'CODIGO vacío; fila omitida.');
@@ -183,6 +195,11 @@ class ExcelProduccionImportService
 
             if ($nombre === '') {
                 $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['nombre_cuenta'] ?? 0), 'WARNING', 'EMPTY_NOMBRE_CUENTA', 'NOMBRE_CUENTA vacío; fila omitida.');
+                continue;
+            }
+
+            if ($periodo === '') {
+                $details[] = $this->detail($rowNum, $this->columnLabel($headerInfo['map']['periodo']), 'WARNING', 'EMPTY_PERIODO', 'PERIODO vacío y sin valor previo; fila omitida.');
                 continue;
             }
 
@@ -199,23 +216,18 @@ class ExcelProduccionImportService
             ];
 
             $sum = 0.0;
-            $allMonthsZero = true;
             foreach (self::MONTH_KEYS as $monthKey) {
                 $columnIndex = $headerInfo['map'][$monthKey] ?? null;
                 $value = $this->readNumeric($sheet, $rowNum, $columnIndex, true, $details);
                 $item[$monthKey] = $value;
                 $sum += $value;
-                if (abs($value) > 0.000001) {
-                    $allMonthsZero = false;
-                }
             }
 
-            if ($allMonthsZero) {
-                $details[] = $this->detail($rowNum, '-', 'WARNING', 'EMPTY_MONTHS', 'Todos los meses están vacíos o en 0; fila omitida.');
-                continue;
-            }
+            $totalFromSheet = $this->readNumeric($sheet, $rowNum, $headerInfo['map']['total'] ?? null, false, $details);
+            $item['total_recalculado'] = $totalFromSheet !== 0.0 || $this->hasCellContent($sheet, $rowNum, $headerInfo['map']['total'] ?? null)
+                ? $totalFromSheet
+                : round($sum, 2);
 
-            $item['total_recalculado'] = round($sum, 2);
             $rows[] = $item;
         }
 
@@ -224,11 +236,11 @@ class ExcelProduccionImportService
         }
 
         $counts = [
-            'total_rows' => $highestRow,
+            'total_rows' => $totalRows,
             'importable_rows' => count($rows),
             'imported_rows' => 0,
             'updated_rows' => 0,
-            'omitted_rows' => max(0, $highestRow - $headerInfo['row'] - count($rows)),
+            'omitted_rows' => max(0, $totalRows - count($rows)),
             'warning_rows' => $this->countBySeverity($details, 'WARNING'),
             'error_rows' => $this->countBySeverity($details, 'ERROR'),
         ];
@@ -304,21 +316,67 @@ class ExcelProduccionImportService
         }
 
         $cell = $sheet->getCell($ref);
-        $rawValue = $cell->getValue();
+        $rawValue = $cell->getCalculatedValue();
+        $parsed = $this->parseFlexibleNumber($rawValue);
 
-        $parsed = $this->numberParser->parse($rawValue);
         if (!$parsed['is_numeric']) {
-            $parsedFormatted = $this->numberParser->parse($cell->getFormattedValue());
-            if ($parsedFormatted['is_numeric']) {
-                return round((float) $parsedFormatted['value'], 2);
-            }
+            $parsed = $this->parseFlexibleNumber($cell->getFormattedValue());
         }
 
         if (!$parsed['is_numeric'] && $registerWarnings && $this->normalizeText((string) $cell->getFormattedValue()) !== '') {
             $details[] = $this->detail($rowNum, $this->columnLabel($columnIndex), 'WARNING', 'NON_NUMERIC_VALUE', 'Valor no numérico; se usará 0.', is_scalar($rawValue) ? (string) $rawValue : null);
         }
 
-        return round((float) $parsed['value'], 2);
+        return round((float) ($parsed['value'] ?? 0.0), 2);
+    }
+
+    private function parseFlexibleNumber(mixed $value): array
+    {
+        if ($value === null || $value === '') {
+            return ['value' => 0.0, 'is_numeric' => true];
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return ['value' => (float) $value, 'is_numeric' => true];
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return ['value' => 0.0, 'is_numeric' => true];
+        }
+
+        $text = str_replace(["\xc2\xa0", ' '], '', $text);
+        $text = preg_replace('/[^\d,\.\-]/u', '', $text) ?? '';
+        if ($text === '' || $text === '-' || $text === '.' || $text === ',') {
+            return ['value' => 0.0, 'is_numeric' => false];
+        }
+
+        if (str_contains($text, ',') && str_contains($text, '.')) {
+            if (strrpos($text, ',') > strrpos($text, '.')) {
+                $text = str_replace('.', '', $text);
+                $text = str_replace(',', '.', $text);
+            } else {
+                $text = str_replace(',', '', $text);
+            }
+        } elseif (str_contains($text, ',')) {
+            $text = str_replace('.', '', $text);
+            $text = str_replace(',', '.', $text);
+        }
+
+        if (!is_numeric($text)) {
+            return ['value' => 0.0, 'is_numeric' => false];
+        }
+
+        return ['value' => (float) $text, 'is_numeric' => true];
+    }
+
+    private function hasCellContent(Worksheet $sheet, int $rowNum, ?int $columnIndex): bool
+    {
+        if ($columnIndex === null) {
+            return false;
+        }
+
+        return $this->cellText($sheet, $columnIndex, $rowNum) !== '';
     }
 
     private function parsePeriodoYear(mixed $value): ?int
@@ -334,18 +392,19 @@ class ExcelProduccionImportService
 
     private function normalizeSheetName(string $value): string
     {
-        $text = mb_strtolower($this->normalizeText($value));
-        $text = strtr($text, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n']);
-        $text = preg_replace('/\s+/', '', $text) ?? $text;
-        $text = preg_replace('/\.+/', '.', $text) ?? $text;
-
-        return $text;
+        $text = $this->normalizeText($value);
+        $text = preg_replace('/\s*-\s*/u', '-', $text) ?? $text;
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+        $text = mb_strtolower($text);
+        return strtr($text, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n']);
     }
 
     private function normalizeHeader(string $value): string
     {
-        $text = strtoupper($this->normalizeText($value));
-        return str_replace(['.', ':'], '', $text);
+        $text = mb_strtoupper($this->normalizeText($value));
+        $text = strtr($text, ['Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N']);
+        $text = str_replace(['.', ':', '_'], ' ', $text);
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
     private function normalizeCodigo(mixed $value): string
@@ -426,6 +485,6 @@ class ExcelProduccionImportService
 
     private function normalizeText(string $value): string
     {
-        return trim(preg_replace('/\s+/', ' ', $value) ?? '');
+        return trim(preg_replace('/\s+/u', ' ', $value) ?? '');
     }
 }
