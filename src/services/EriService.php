@@ -8,61 +8,17 @@ use PDO;
 
 class EriService
 {
-    private const MONTHS = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-    private const MONTH_TO_DB = ['ENERO'=>'ENE','FEBRERO'=>'FEB','MARZO'=>'MAR','ABRIL'=>'ABR','MAYO'=>'MAY','JUNIO'=>'JUN','JULIO'=>'JUL','AGOSTO'=>'AGO','SEPTIEMBRE'=>'SEP','OCTUBRE'=>'OCT','NOVIEMBRE'=>'NOV','DICIEMBRE'=>'DIC'];
-
-    /**
-     * ERI_TEMPLATE base (ordenado por ROW).
-     * Nota: se incluyen todas las filas base de cálculo necesarias para ERI y se completan cuentas vacías con 0.00.
-     */
-    private const ERI_TEMPLATE = [
-        ['ROW'=>5,'CODE'=>'401','DESC'=>'A.  INGRESOS DE ACTIVIDADES ORDINARIAS','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>6,'CODE'=>'4010101','DESC'=>'VENTA DE REPUESTOS','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>7,'CODE'=>'4010102','DESC'=>'VENTA DE MATERIALES','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>8,'CODE'=>'4010103','DESC'=>'VENTA DE PRODUCTOS','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>9,'CODE'=>'4010104','DESC'=>'VENTA DE INSUMOS MEDICOS','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>10,'CODE'=>'4010105','DESC'=>'VENTA DE ACTIVOS BIOLOGICOS','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>11,'CODE'=>'4010106','DESC'=>'VENTA DE PLASTICOS','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>12,'CODE'=>'4010107','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>13,'CODE'=>'4010108','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>14,'CODE'=>'4010109','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>15,'CODE'=>'4010110','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>16,'CODE'=>'4010111','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>17,'CODE'=>'4010112','DESC'=>'','TYPE'=>'DETAIL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>18,'CODE'=>'40101','DESC'=>'    Venta de Bienes','TYPE'=>'SUBTOTAL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-        ['ROW'=>76,'CODE'=>'401','DESC'=>'TOTAL INGRESOS DE ACTIVIDADES ORDINARIAS','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_INGRESOS','SIGN'=>1],
-
-        ['ROW'=>77,'CODE'=>'501','DESC'=>'B. COSTO DE VENTAS','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_COSTOS','SIGN'=>-1],
-        ['ROW'=>128,'CODE'=>'501','DESC'=>'TOTAL COSTO DE VENTAS','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_COSTOS','SIGN'=>-1],
-        ['ROW'=>130,'CODE'=>null,'DESC'=>'GANANCIA BRUTA','TYPE'=>'RESULT','SOURCE_TABLE'=>null,'SIGN'=>1],
-
-        ['ROW'=>131,'CODE'=>'701','DESC'=>'C. GASTOS OPERACIONALES','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_GASTOS_OPERACIONALES','SIGN'=>-1],
-        ['ROW'=>255,'CODE'=>'701','DESC'=>'TOTAL GASTOS OPERACIONALES','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_GASTOS_OPERACIONALES','SIGN'=>-1],
-        ['ROW'=>257,'CODE'=>null,'DESC'=>'RESULTADO DE OPERACIÓN','TYPE'=>'RESULT','SOURCE_TABLE'=>null,'SIGN'=>1],
-
-        ['ROW'=>258,'CODE'=>'80101','DESC'=>'D. OTROS INGRESOS','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_OTROS_INGRESOS','SIGN'=>1],
-        ['ROW'=>285,'CODE'=>'80101','DESC'=>'TOTAL OTROS INGRESOS','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_OTROS_INGRESOS','SIGN'=>1],
-
-        ['ROW'=>286,'CODE'=>'70301','DESC'=>'E. GASTOS FINANCIEROS','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_GASTOS_FINANCIEROS','SIGN'=>-1],
-        ['ROW'=>328,'CODE'=>'70301','DESC'=>'TOTAL GASTOS FINANCIEROS','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_GASTOS_FINANCIEROS','SIGN'=>-1],
-
-        ['ROW'=>329,'CODE'=>'90101','DESC'=>'F. OTROS EGRESOS','TYPE'=>'HEADER','SOURCE_TABLE'=>'PRESUPUESTO_OTROS_EGRESOS','SIGN'=>-1],
-        ['ROW'=>356,'CODE'=>'90101','DESC'=>'TOTAL OTROS EGRESOS','TYPE'=>'TOTAL','SOURCE_TABLE'=>'PRESUPUESTO_OTROS_EGRESOS','SIGN'=>-1],
-
-        ['ROW'=>358,'CODE'=>null,'DESC'=>'RESULTADO ANTES DE IMPUESTOS','TYPE'=>'RESULT','SOURCE_TABLE'=>null,'SIGN'=>1],
-        ['ROW'=>362,'CODE'=>null,'DESC'=>'PARTICIPACIÓN TRABAJADORES','TYPE'=>'CALC','SOURCE_TABLE'=>null,'SIGN'=>-1],
-        ['ROW'=>364,'CODE'=>null,'DESC'=>'IMPUESTO A LA RENTA','TYPE'=>'CALC','SOURCE_TABLE'=>null,'SIGN'=>-1],
-        ['ROW'=>366,'CODE'=>null,'DESC'=>'RESULTADO DEL PERIODO','TYPE'=>'RESULT_FINAL','SOURCE_TABLE'=>null,'SIGN'=>1],
-    ];
+    private const MONTHS = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+    private const MONTH_TO_DB = ['ENERO' => 'ENE', 'FEBRERO' => 'FEB', 'MARZO' => 'MAR', 'ABRIL' => 'ABR', 'MAYO' => 'MAY', 'JUNIO' => 'JUN', 'JULIO' => 'JUL', 'AGOSTO' => 'AGO', 'SEPTIEMBRE' => 'SEP', 'OCTUBRE' => 'OCT', 'NOVIEMBRE' => 'NOV', 'DICIEMBRE' => 'DIC'];
 
     public function __construct(private PDO $pdo) {}
 
     public function build(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25): array
     {
-        $template = self::ERI_TEMPLATE;
+        $template = $this->buildTemplate();
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
-        $detailByCode = $this->loadDetails($periodo, $template);
+        ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
@@ -74,26 +30,41 @@ class EriService
             if ($type === 'DETAIL' && is_string($code)) {
                 $values = $detailByCode[$code] ?? $values;
             } elseif ($type === 'SUBTOTAL' && is_string($code)) {
-                $values = $this->subtotalFromDetails((string) $code, $detailByCode);
+                $values = $this->subtotalFromDetails($code, $detailByCode);
             } elseif ($type === 'TOTAL' && is_string($code)) {
-                $values = $this->resolveTotal($code, $rowsByCode, $detailByCode);
+                $values = $this->resolveTotal($code, $detailByCode);
+            }
+
+            $rowDesc = (string) $meta['DESC'];
+            if ($type === 'DETAIL' && is_string($code) && ($descByCode[$code] ?? '') !== '') {
+                $rowDesc = $descByCode[$code];
             }
 
             $row = [
                 'ROW' => (int) $meta['ROW'],
                 'CODE' => $code,
-                'DESC' => (string) ($meta['DESC'] ?? ''),
+                'DESC' => $rowDesc,
                 'TYPE' => $type,
             ] + $values;
 
             $rows[] = $row;
+            $rowsByRow[(int) $row['ROW']] = $row;
             if (is_string($code) && $code !== '') {
                 $rowsByCode[$code] = $values;
             }
-            $rowsByRow[(int) $meta['ROW']] = &$rows[array_key_last($rows)];
         }
 
         $this->applyFormulaRows($rowsByRow, $tasaPart, $tasaRenta);
+
+        foreach ($rows as &$row) {
+            $rowNumber = (int) ($row['ROW'] ?? 0);
+            if (isset($rowsByRow[$rowNumber])) {
+                foreach (self::MONTHS as $month) {
+                    $row[$month] = (float) ($rowsByRow[$rowNumber][$month] ?? 0.0);
+                }
+            }
+        }
+        unset($row);
 
         $totalIngresos = $rowsByRow[76] ?? $this->emptyRow(76, '401', 'TOTAL INGRESOS DE ACTIVIDADES ORDINARIAS', 'TOTAL');
         foreach ($rows as &$row) {
@@ -102,8 +73,71 @@ class EriService
                 $row[$month . '_PCT'] = $den == 0.0 ? 0.0 : (((float) $row[$month]) / $den) * 100;
             }
         }
+        unset($row);
 
-        return ['success'=>true,'periodo'=>$periodo,'tasa_part'=>$tasaPart,'tasa_renta'=>$tasaRenta,'rows'=>$rows, 'SUCCESS'=>true, 'ROWS'=>$rows];
+        return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
+    }
+
+    private function buildTemplate(): array
+    {
+        $rows = [];
+
+        $rows[] = ['ROW' => 5, 'CODE' => '401', 'DESC' => 'A.  INGRESOS DE ACTIVIDADES ORDINARIAS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_INGRESOS', 'SIGN' => 1];
+        $this->appendRangeBlock($rows, 6, '4010101', '4010112', '40101', '    Venta de Bienes', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 19, '4010201', '4010212', '40102', '    Prestación de Servicios', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 32, '4010301', '4010310', '40103', '    Contratos de Construcción', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 43, '4010401', '4010405', '40104', '    Subvenciones del Gobierno', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 49, '4010501', '4010505', '40105', '    Regalías', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 55, '4010601', '4010606', '40106', '    Intereses', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 62, '4010701', '4010705', '40107', '    Dividendos', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 68, '4010801', '4010803', '40108', '    Ganancia por valor razonable', 'PRESUPUESTO_INGRESOS', 1);
+        $this->appendRangeBlock($rows, 72, '4019001', '4019003', '40190', '    Descuentos y Rebajas', 'PRESUPUESTO_INGRESOS', 1);
+        $rows[] = ['ROW' => 76, 'CODE' => '401', 'DESC' => 'TOTAL INGRESOS DE ACTIVIDADES ORDINARIAS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_INGRESOS', 'SIGN' => 1];
+
+        $rows[] = ['ROW' => 77, 'CODE' => '501', 'DESC' => 'B. COSTO DE VENTAS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_COSTOS', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 78, '5010101', '5010112', '50101', '    Costo de Venta de Bienes', 'PRESUPUESTO_COSTOS', -1);
+        $this->appendRangeBlock($rows, 91, '5010201', '5010212', '50102', '    Costo de Prestación de Servicios', 'PRESUPUESTO_COSTOS', -1);
+        $this->appendRangeBlock($rows, 104, '5010301', '5010310', '50103', '    Contratos de Construcción', 'PRESUPUESTO_COSTOS', -1);
+        $this->appendRangeBlock($rows, 115, '5010401', '5010405', '50104', '    Subvenciones del Gobierno', 'PRESUPUESTO_COSTOS', -1);
+        $this->appendRangeBlock($rows, 121, '5010501', '5010505', '50105', '    Regalías', 'PRESUPUESTO_COSTOS', -1);
+        $rows[] = ['ROW' => 128, 'CODE' => '501', 'DESC' => 'TOTAL COSTO DE VENTAS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_COSTOS', 'SIGN' => -1];
+        $rows[] = ['ROW' => 130, 'CODE' => null, 'DESC' => 'GANANCIA BRUTA', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+
+        $rows[] = ['ROW' => 131, 'CODE' => '701', 'DESC' => 'C. GASTOS OPERACIONALES', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 132, '7010101', '7010160', '70101', '    Gastos Operacionales - Administración', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
+        $this->appendRangeBlock($rows, 193, '7010201', '7010260', '70102', '    Gastos Operacionales - Ventas', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
+        $rows[] = ['ROW' => 255, 'CODE' => '701', 'DESC' => 'TOTAL GASTOS OPERACIONALES', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
+        $rows[] = ['ROW' => 257, 'CODE' => null, 'DESC' => 'RESULTADO DE ACTIVIDADES DE OPERACIÓN', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+
+        $rows[] = ['ROW' => 258, 'CODE' => '80101', 'DESC' => 'D. OTROS INGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
+        $this->appendRangeBlock($rows, 259, '8010101', '8010125', '80101', '    Otros Ingresos', 'PRESUPUESTO_OTROS_INGRESOS', 1);
+        $rows[] = ['ROW' => 285, 'CODE' => '80101', 'DESC' => 'TOTAL OTROS INGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
+
+        $rows[] = ['ROW' => 286, 'CODE' => '70301', 'DESC' => 'E. GASTOS FINANCIEROS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 287, '7030101', '7030140', '70301', '    Gastos Financieros', 'PRESUPUESTO_GASTOS_FINANCIEROS', -1);
+        $rows[] = ['ROW' => 328, 'CODE' => '70301', 'DESC' => 'TOTAL GASTOS FINANCIEROS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
+
+        $rows[] = ['ROW' => 329, 'CODE' => '90101', 'DESC' => 'F. OTROS EGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 330, '9010101', '9010125', '90101', '    Otros Egresos', 'PRESUPUESTO_OTROS_EGRESOS', -1);
+        $rows[] = ['ROW' => 356, 'CODE' => '90101', 'DESC' => 'TOTAL OTROS EGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
+
+        $rows[] = ['ROW' => 358, 'CODE' => null, 'DESC' => 'RESULTADO ANTES DE PARTICIPACIÓN E IMPUESTOS', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 360, 'CODE' => null, 'DESC' => 'IMPUESTOS Y PARTICIPACIÓN', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 362, 'CODE' => null, 'DESC' => '(-) Participación a Trabajadores (15%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
+        $rows[] = ['ROW' => 364, 'CODE' => null, 'DESC' => '(-) Impuesto a la Renta Sociedades (25%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
+        $rows[] = ['ROW' => 366, 'CODE' => null, 'DESC' => 'RESULTADO DEL PERÍODO', 'TYPE' => 'RESULT_FINAL', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+
+        return $rows;
+    }
+
+    private function appendRangeBlock(array &$rows, int $startRow, string $startCode, string $endCode, string $subtotalCode, string $subtotalDesc, string $sourceTable, int $sign): void
+    {
+        $row = $startRow;
+        for ($code = (int) $startCode; $code <= (int) $endCode; $code++) {
+            $rows[] = ['ROW' => $row, 'CODE' => (string) $code, 'DESC' => '', 'TYPE' => 'DETAIL', 'SOURCE_TABLE' => $sourceTable, 'SIGN' => $sign];
+            $row++;
+        }
+        $rows[] = ['ROW' => $row, 'CODE' => $subtotalCode, 'DESC' => $subtotalDesc, 'TYPE' => 'SUBTOTAL', 'SOURCE_TABLE' => $sourceTable, 'SIGN' => $sign];
     }
 
     private function loadDetails(int $periodo, array $template): array
@@ -124,22 +158,24 @@ class EriService
         }
 
         $detail = [];
+        $descByCode = [];
         foreach ($byTableCodes as $table => $codes) {
             $data = $this->queryDetailTable($table, $periodo, array_values(array_unique($codes)));
-            foreach ($data as $code => $months) {
+            foreach ($data as $code => $dataRow) {
                 $values = $this->zeroMonths();
                 $sign = $signByCode[$code] ?? 1;
                 foreach (self::MONTHS as $month) {
-                    $values[$month] = ((float) ($months[$month] ?? 0.0)) * $sign;
+                    $values[$month] = ((float) ($dataRow[$month] ?? 0.0)) * $sign;
                 }
                 $detail[$code] = $values;
+                $descByCode[$code] = trim((string) ($dataRow['DESC'] ?? ''));
             }
             foreach ($codes as $code) {
                 $detail[$code] ??= $this->zeroMonths();
             }
         }
 
-        return $detail;
+        return ['values' => $detail, 'descriptions' => $descByCode];
     }
 
     private function queryDetailTable(string $table, int $periodo, array $codes): array
@@ -148,7 +184,8 @@ class EriService
             return [];
         }
         $placeholders = implode(',', array_fill(0, count($codes), '?'));
-        $sql = "SELECT CODIGO, " . implode(', ', array_map(fn($m) => 'COALESCE(' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS)) . " FROM {$table} WHERE ANIO = ? AND CODIGO IN ({$placeholders})";
+        $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS));
+        $sql = "SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS DESC, {$monthSelect} FROM {$table} WHERE ANIO = ? AND CODIGO IN ({$placeholders})";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute(array_merge([$periodo], $codes));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -158,7 +195,7 @@ class EriService
             if ($code === '') {
                 continue;
             }
-            $out[$code] = [];
+            $out[$code] = ['DESC' => (string) ($row['DESC'] ?? '')];
             foreach (self::MONTHS as $month) {
                 $out[$code][$month] = (float) ($row[$month] ?? 0.0);
             }
@@ -170,35 +207,36 @@ class EriService
     private function subtotalFromDetails(string $prefix, array $detailByCode): array
     {
         $sum = $this->zeroMonths();
-        $prefixStr = (string) $prefix;
         foreach ($detailByCode as $code => $values) {
             $codeStr = (string) ($code ?? '');
             if ($codeStr === '') {
                 continue;
             }
-            if (str_starts_with($codeStr, $prefixStr) && strlen($codeStr) === 7) {
+            if (str_starts_with($codeStr, $prefix) && strlen($codeStr) === 7) {
                 foreach (self::MONTHS as $month) {
                     $sum[$month] += (float) ($values[$month] ?? 0.0);
                 }
             }
         }
+
         return $sum;
     }
 
-    private function resolveTotal(string $code, array $rowsByCode, array $detailByCode): array
+    private function resolveTotal(string $code, array $detailByCode): array
     {
         $sum = $this->zeroMonths();
         $ranges = [
-            '401' => ['40101','40190'],
-            '501' => ['50101','50105'],
-            '701' => ['70101','70102'],
-            '80101' => ['8010101','8010125'],
-            '70301' => ['7030101','7030125'],
-            '90101' => ['9010101','9010125'],
+            '401' => ['4010101', '4019003'],
+            '501' => ['5010101', '5010505'],
+            '701' => ['7010101', '7010260'],
+            '80101' => ['8010101', '8010125'],
+            '70301' => ['7030101', '7030140'],
+            '90101' => ['9010101', '9010125'],
         ];
         if (!isset($ranges[$code])) {
             return $sum;
         }
+
         [$start, $end] = $ranges[$code];
         foreach ($detailByCode as $detailCode => $values) {
             $detailCodeStr = (string) ($detailCode ?? '');
@@ -208,19 +246,6 @@ class EriService
             if ($detailCodeStr >= $start && $detailCodeStr <= $end) {
                 foreach (self::MONTHS as $month) {
                     $sum[$month] += (float) ($values[$month] ?? 0.0);
-                }
-            }
-        }
-        if ($code === '401') {
-            foreach ($rowsByCode as $rowCode => $values) {
-                $rowCodeStr = (string) ($rowCode ?? '');
-                if ($rowCodeStr === '') {
-                    continue;
-                }
-                if (strlen($rowCodeStr) === 5 && str_starts_with($rowCodeStr, '401')) {
-                    foreach (self::MONTHS as $month) {
-                        $sum[$month] += (float) ($values[$month] ?? 0.0);
-                    }
                 }
             }
         }
@@ -260,11 +285,12 @@ class EriService
         foreach (self::MONTHS as $month) {
             $row[$month] = 0.0;
         }
+
         return $row;
     }
 
     private function emptyRow(int $rowNumber, ?string $code, string $desc, string $type): array
     {
-        return ['ROW'=>$rowNumber,'CODE'=>$code,'DESC'=>$desc,'TYPE'=>$type] + $this->zeroMonths();
+        return ['ROW' => $rowNumber, 'CODE' => $code, 'DESC' => $desc, 'TYPE' => $type] + $this->zeroMonths();
     }
 }
