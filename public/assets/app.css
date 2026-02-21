@@ -12,3 +12,16 @@ body { background: #f3f6fb; }
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; height: auto; position: static; }
 }
+
+.eri-table th { background: #fff; font-weight: 700; }
+.eri-table td, .eri-table th { font-size: 0.82rem; }
+.eri-table .eri-header td { font-weight: 700; background: #f8fafc; border-top: 2px solid #64748b; }
+.eri-table .eri-total td,
+.eri-table .eri-result td,
+.eri-table .eri-calc td,
+.eri-table .eri-result_final td { font-weight: 700; }
+.eri-table .eri-total td,
+.eri-table .eri-result td,
+.eri-table .eri-result_final td { border-top: 2px solid #334155; }
+.eri-table .eri-result_final td { background: #e2e8f0; }
+.eri-negativo { color: #b91c1c; }
