@@ -182,84 +182,7 @@ class PresupuestoIngresosRepository
 
     public function upsertProduccionRows(string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
-        if ($rows === []) {
-            return ['inserted_count' => 0, 'updated_count' => 0];
-        }
-
-        $inserted = 0;
-        $updated = 0;
-
-        $sql = 'INSERT INTO PRESUPUESTO_PRODUCCION_PARAMETRO (
-            TIPO,
-            ANIO,
-            PARAMETRO_KEY,
-            PARAMETRO_NOMBRE,
-            VALOR,
-            ARCHIVO_NOMBRE,
-            HOJA_NOMBRE,
-            USUARIO_CARGA,
-            FECHA_CARGA
-        ) VALUES (
-            :TIPO,
-            :ANIO,
-            :PARAMETRO_KEY,
-            :PARAMETRO_NOMBRE,
-            :VALOR,
-            :ARCHIVO_NOMBRE,
-            :HOJA_NOMBRE,
-            :USUARIO_CARGA,
-            CURRENT_TIMESTAMP
-        )
-        ON DUPLICATE KEY UPDATE
-            PARAMETRO_NOMBRE = VALUES(PARAMETRO_NOMBRE),
-            VALOR = VALUES(VALOR),
-            ARCHIVO_NOMBRE = VALUES(ARCHIVO_NOMBRE),
-            HOJA_NOMBRE = VALUES(HOJA_NOMBRE),
-            USUARIO_CARGA = VALUES(USUARIO_CARGA),
-            FECHA_CARGA = CURRENT_TIMESTAMP';
-
-        $upsertStmt = $this->pdo->prepare($sql);
-        $existsStmt = $this->pdo->prepare('SELECT 1 FROM PRESUPUESTO_PRODUCCION_PARAMETRO WHERE TIPO = :tipo AND ANIO = :anio AND PARAMETRO_KEY = :parametro_key LIMIT 1');
-
-        $this->pdo->beginTransaction();
-
-        try {
-            foreach ($rows as $row) {
-                $params = [
-                    'TIPO' => $tipo,
-                    'ANIO' => (int) ($row['ANIO'] ?? 0),
-                    'PARAMETRO_KEY' => (string) ($row['PARAMETRO_KEY'] ?? ''),
-                    'PARAMETRO_NOMBRE' => (string) ($row['PARAMETRO_NOMBRE'] ?? ''),
-                    'VALOR' => (float) ($row['VALOR'] ?? 0),
-                    'ARCHIVO_NOMBRE' => $fileName,
-                    'HOJA_NOMBRE' => $sheetName,
-                    'USUARIO_CARGA' => $usuario,
-                ];
-
-                $existsStmt->execute([
-                    'tipo' => $tipo,
-                    'anio' => (int) ($row['ANIO'] ?? 0),
-                    'parametro_key' => (string) ($row['PARAMETRO_KEY'] ?? ''),
-                ]);
-                $alreadyExists = $existsStmt->fetchColumn() !== false;
-
-                $upsertStmt->execute($params);
-                if ($alreadyExists) {
-                    $updated++;
-                } else {
-                    $inserted++;
-                }
-            }
-
-            $this->pdo->commit();
-        } catch (\Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
-            throw $e;
-        }
-
-        return ['inserted_count' => $inserted, 'updated_count' => $updated];
+        return $this->upsertRowsByTab('produccion', $tipo, $sheetName, $fileName, $usuario, $rows);
     }
 
     public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
@@ -537,23 +460,6 @@ class PresupuestoIngresosRepository
     {
         $table = $this->tableByTab($tab);
 
-        if ($tab === 'produccion') {
-            $stmt = $this->pdo->prepare(
-                'SELECT
-                    ANIO,
-                    TIPO,
-                    PARAMETRO_KEY,
-                    PARAMETRO_NOMBRE,
-                    VALOR
-                FROM ' . $table . '
-                WHERE TIPO = :tipo AND ANIO = :anio
-                ORDER BY PARAMETRO_KEY'
-            );
-            $stmt->execute(['tipo' => $tipo, 'anio' => $anio]);
-
-            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        }
-
         $columns = $this->getPresupuestoColumnsByTab($tab);
         $totalColumn = isset($columns['TOTAL_RECALCULADO']) ? 'TOTAL_RECALCULADO' : 'TOTAL';
         $stmt = $this->pdo->prepare(
@@ -667,7 +573,7 @@ class PresupuestoIngresosRepository
             }
         }
 
-        $required = $tab === 'produccion' ? ['TIPO', 'ANIO', 'PARAMETRO_KEY'] : ['TIPO', 'ANIO', 'CODIGO'];
+        $required = ['TIPO', 'ANIO', 'CODIGO'];
         foreach ($required as $column) {
             if (!isset($columns[$column])) {
                 throw new \RuntimeException($table . ' no tiene columna requerida: ' . $column);
@@ -716,7 +622,7 @@ class PresupuestoIngresosRepository
             'otros_egresos' => 'PRESUPUESTO_OTROS_EGRESOS',
             'gastos_operacionales' => 'PRESUPUESTO_GASTOS_OPERACIONALES',
             'gastos_financieros' => 'PRESUPUESTO_GASTOS_FINANCIEROS',
-            'produccion' => 'PRESUPUESTO_PRODUCCION_PARAMETRO',
+            'produccion' => 'PRESUPUESTO_PRODUCCION',
             default => 'PRESUPUESTO_INGRESOS',
         };
     }
