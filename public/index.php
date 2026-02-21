@@ -245,6 +245,10 @@ switch ($route) {
         $viewData['anexos'] = $anexoController->list($_GET + ['proyectoId' => $_GET['proyectoId'] ?? $activeProjectId]);
         $contentView = __DIR__ . '/../src/views/anexos.php';
         break;
+    case 'eri':
+        $viewData['eriDefaultYear'] = isset($_GET['anio']) ? (int) $_GET['anio'] : (int) date('Y');
+        $contentView = __DIR__ . '/../src/views/eri.php';
+        break;
     case 'history-imports':
         $viewData['logs'] = $logRepo->listRecent($activeProjectId, 100);
         $contentView = __DIR__ . '/../src/views/history_imports.php';
