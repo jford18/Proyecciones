@@ -170,8 +170,13 @@ class EriService
     private function subtotalFromDetails(string $prefix, array $detailByCode): array
     {
         $sum = $this->zeroMonths();
+        $prefixStr = (string) $prefix;
         foreach ($detailByCode as $code => $values) {
-            if (str_starts_with($code, $prefix) && strlen($code) === 7) {
+            $codeStr = (string) ($code ?? '');
+            if ($codeStr === '') {
+                continue;
+            }
+            if (str_starts_with($codeStr, $prefixStr) && strlen($codeStr) === 7) {
                 foreach (self::MONTHS as $month) {
                     $sum[$month] += (float) ($values[$month] ?? 0.0);
                 }
@@ -196,7 +201,11 @@ class EriService
         }
         [$start, $end] = $ranges[$code];
         foreach ($detailByCode as $detailCode => $values) {
-            if ($detailCode >= $start && $detailCode <= $end) {
+            $detailCodeStr = (string) ($detailCode ?? '');
+            if ($detailCodeStr === '') {
+                continue;
+            }
+            if ($detailCodeStr >= $start && $detailCodeStr <= $end) {
                 foreach (self::MONTHS as $month) {
                     $sum[$month] += (float) ($values[$month] ?? 0.0);
                 }
@@ -204,7 +213,11 @@ class EriService
         }
         if ($code === '401') {
             foreach ($rowsByCode as $rowCode => $values) {
-                if (strlen($rowCode) === 5 && str_starts_with($rowCode, '401')) {
+                $rowCodeStr = (string) ($rowCode ?? '');
+                if ($rowCodeStr === '') {
+                    continue;
+                }
+                if (strlen($rowCodeStr) === 5 && str_starts_with($rowCodeStr, '401')) {
                     foreach (self::MONTHS as $month) {
                         $sum[$month] += (float) ($values[$month] ?? 0.0);
                     }
