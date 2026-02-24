@@ -40,6 +40,16 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   </div>
 </div>
 
+<div class="offcanvas offcanvas-end" tabindex="-1" id="eriOrigenDrawer" aria-labelledby="eriOrigenDrawerLabel">
+  <div class="offcanvas-header">
+    <h5 id="eriOrigenDrawerLabel" class="offcanvas-title">ORIGEN DEL VALOR</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body" id="eri-origen-body">
+    <p class="text-muted">Selecciona una celda numérica para ver su trazabilidad.</p>
+  </div>
+</div>
+
 <script>
 (() => {
   const months = <?= json_encode($months, JSON_UNESCAPED_UNICODE) ?>;
@@ -48,10 +58,66 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const partInput = document.getElementById('eri-participacion');
   const rentaInput = document.getElementById('eri-renta');
   const exportLink = document.getElementById('eri-exportar');
+  const drawerBody = document.getElementById('eri-origen-body');
+  const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const buildUrl = (format = 'json') => `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number(rentaInput.value || 25) / 100).toString())}&format=${format}`;
+
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+
+  const renderFormula = (formula = {}) => {
+    if (formula.tipo !== 'SUMA' || !Array.isArray(formula.componentes)) {
+      return `<p class="mb-0">${escapeHtml(formula.explicacion || '')}</p>`;
+    }
+    const lines = formula.componentes.map((item) => `<div class="d-flex justify-content-between"><span>${escapeHtml(item.codigo)}</span><strong>${fmt(item.valor || 0)}</strong></div>`).join('');
+    const total = formula.componentes.reduce((acc, item) => acc + Number(item.valor || 0), 0);
+    return `${lines}<hr class="my-2"><div class="d-flex justify-content-between"><span>TOTAL</span><strong>${fmt(total)}</strong></div>`;
+  };
+
+  const openTrace = async (codigo, descripcion, monthIndex, valorEri) => {
+    const anio = Number(yearInput.value || new Date().getFullYear());
+    const tipo = new URLSearchParams(window.location.search).get('tipo') || 'PRESUPUESTO';
+    drawerBody.innerHTML = '<div class="text-muted">Cargando trazabilidad...</div>';
+    drawer.show();
+
+    const url = `api/eri/origen.php?anio=${encodeURIComponent(anio)}&codigo=${encodeURIComponent(codigo)}&mes=${encodeURIComponent(monthIndex)}&tipo=${encodeURIComponent(tipo)}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || 'No se pudo obtener la trazabilidad.');
+    }
+
+    drawerBody.innerHTML = `
+      <h6 class="mb-2">🔹 Resumen</h6>
+      <ul class="list-unstyled small mb-3">
+        <li><strong>Cuenta:</strong> ${escapeHtml(descripcion || data.descripcion || '-')}</li>
+        <li><strong>Código:</strong> ${escapeHtml(data.codigo)}</li>
+        <li><strong>Mes:</strong> ${escapeHtml(data.detalle?.mes_nombre || '')}</li>
+        <li><strong>Valor ERI:</strong> ${fmt(valorEri)}</li>
+        <li><strong>Tab origen:</strong> ${escapeHtml(data.origen?.tab || '')}</li>
+        <li><strong>Hoja Excel original:</strong> ${escapeHtml(data.origen?.hoja_excel || '')}</li>
+      </ul>
+
+      <h6 class="mb-2">🔹 Detalle</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm table-bordered mb-0">
+          <tbody>
+            <tr><th>Archivo importado</th><td>${escapeHtml(data.detalle?.archivo || '')}</td></tr>
+            <tr><th>Hoja</th><td>${escapeHtml(data.detalle?.hoja || '')}</td></tr>
+            <tr><th>Código origen</th><td>${escapeHtml(data.codigo || '')}</td></tr>
+            <tr><th>Mes</th><td>${escapeHtml(data.detalle?.mes_nombre || '')}</td></tr>
+            <tr><th>Valor original</th><td>${fmt(data.detalle?.valor_original || 0)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <a class="btn btn-sm btn-outline-primary mb-3" target="_blank" rel="noopener" href="${escapeHtml(data.detalle?.ver_excel_url || '#')}">👉 Ver como Excel</a>
+
+      <h6 class="mb-2">🔹 Explicación automática</h6>
+      <div class="small">${renderFormula(data.formula || {})}</div>
+    `;
+  };
 
   const renderRows = (rows) => {
     tbody.innerHTML = '';
@@ -70,8 +136,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       months.forEach((month) => {
         const tdVal = document.createElement('td');
         const value = Number(row[month] || 0);
-        tdVal.textContent = fmt(value);
-        tdVal.classList.add('text-end');
+        tdVal.classList.add('text-end', 'eri-cell-trace');
+        tdVal.innerHTML = `<span>${fmt(value)}</span><span class="eri-trace-icon" title="Ver origen">🔎</span>`;
+        if (row.CODE) {
+          tdVal.dataset.code = row.CODE;
+          tdVal.dataset.desc = row.DESCRIPCION || '';
+          tdVal.dataset.month = String(months.indexOf(month) + 1);
+          tdVal.dataset.value = String(value);
+        }
         tr.appendChild(tdVal);
 
         const tdPct = document.createElement('td');
@@ -82,6 +154,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       tbody.appendChild(tr);
     });
   };
+
+  tbody.addEventListener('click', (event) => {
+    const cell = event.target.closest('td.eri-cell-trace[data-code]');
+    if (!cell) return;
+    openTrace(cell.dataset.code, cell.dataset.desc || '', Number(cell.dataset.month || 0), Number(cell.dataset.value || 0)).catch((e) => {
+      drawerBody.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(e.message)}</div>`;
+    });
+  });
 
   const load = async () => {
     const response = await fetch(buildUrl('json'));

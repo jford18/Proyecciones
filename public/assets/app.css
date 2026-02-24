@@ -16,6 +16,9 @@ body { background: #f3f6fb; }
 .eri-table .eri-result td { font-weight: 800; background: #f8fafc; }
 .eri-table .eri-calc td { font-style: italic; background: #fffbea; }
 .eri-table .eri-result_final td { font-weight: 900; background: #dbeafe; }
+.eri-cell-trace { position: relative; cursor: pointer; padding-right: 1.25rem !important; }
+.eri-trace-icon { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; font-size: 0.7rem; }
+.eri-cell-trace:hover .eri-trace-icon { opacity: 1; }
 
 @media (max-width: 992px) {
   .app-shell { flex-direction: column; }
