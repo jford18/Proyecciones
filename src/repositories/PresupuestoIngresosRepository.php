@@ -613,6 +613,16 @@ class PresupuestoIngresosRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+
+    public function findImportLogById(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM IMPORT_LOG WHERE ID = :id LIMIT 1');
+        $stmt->execute(['id' => $id]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row !== false ? $row : null;
+    }
+
     public function findLatestImportLogByTabTipo(string $tab, string $tipo): ?array
     {
         $columns = $this->getImportLogColumns();
