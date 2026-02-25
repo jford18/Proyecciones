@@ -124,15 +124,18 @@ function comparativoFetchLatestImportLogSafe(PDO $pdo, string $tab, string $tipo
 
 function comparativoBuildSafe(array $params): array
 {
-    $tab = comparativoNormalizeTab((string) ($params['tab'] ?? 'eri'));
+    $tab = comparativoNormalizeTab((string) ($params['tab'] ?? ''));
     $tipoA = strtoupper(trim((string) ($params['tipo_a'] ?? 'REAL')));
     $tipoB = strtoupper(trim((string) ($params['tipo_b'] ?? 'PRESUPUESTO')));
     $onlyDiff = ((int) ($params['solo_diferencias'] ?? 0)) === 1;
     $idA = (int) ($params['import_log_id_a'] ?? ($params['log_id_a'] ?? 0));
     $idB = (int) ($params['import_log_id_b'] ?? ($params['log_id_b'] ?? 0));
 
-    if ($tab === '' || $tipoA === '' || $tipoB === '') {
-        throw new RuntimeException('Parámetros inválidos: tab, tipo_a y tipo_b son obligatorios.');
+    if ($tab === '') {
+        throw new InvalidArgumentException('Falta parámetro tab');
+    }
+    if ($tipoA === '' || $tipoB === '') {
+        throw new InvalidArgumentException('Parámetros inválidos: tipo_a y tipo_b son obligatorios.');
     }
 
     $pdo = comparativoBuildPdo();
@@ -216,6 +219,13 @@ try {
         'ok' => true,
         'data' => $result,
     ], 200);
+} catch (InvalidArgumentException $e) {
+    comparativoJsonResponse([
+        'ok' => false,
+        'message' => 'Solicitud inválida.',
+        'detail' => $e->getMessage(),
+        'trace_id' => $traceId,
+    ], 400);
 } catch (Throwable $e) {
     comparativoJsonError($e, $traceId, 500);
 }

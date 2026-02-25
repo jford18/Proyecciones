@@ -61,6 +61,13 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
             <label class="form-label">Tipo B</label>
             <input id="eri-comp-tipo-b" class="form-control" value="PRESUPUESTO">
           </div>
+          <div class="col-md-3">
+            <label class="form-label">Modo</label>
+            <select id="eri-comp-modo" class="form-select">
+              <option value="import" selected>Importación vs importación</option>
+              <option value="excel">Comparar con Excel</option>
+            </select>
+          </div>
           <div class="col-md-3 form-check mt-4 pt-2">
             <input id="eri-comp-only-diff" class="form-check-input" type="checkbox" checked>
             <label class="form-check-label" for="eri-comp-only-diff">Solo diferencias</label>
@@ -114,6 +121,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const compTipoA = document.getElementById('eri-comp-tipo-a');
   const compTipoB = document.getElementById('eri-comp-tipo-b');
   const compOnlyDiff = document.getElementById('eri-comp-only-diff');
+  const compModo = document.getElementById('eri-comp-modo');
   const compCompareBtn = document.getElementById('eri-comp-compare');
   const compExportCsvBtn = document.getElementById('eri-comp-export-csv');
   const compViewA = document.getElementById('eri-comp-view-a');
@@ -412,19 +420,26 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       </div>`).join('');
   };
 
-  const setViewExcelLinks = (meta = {}) => {
-    const tab = String(meta?.tab || 'ingresos').toLowerCase();
+  const currentTab = 'ERI';
+
+  const setViewExcelLinks = (meta = {}, modo = 'import') => {
+    const tab = String(meta?.tab || currentTab).toUpperCase();
     const tipoA = meta?.tipo_a || 'REAL';
     const tipoB = meta?.tipo_b || 'PRESUPUESTO';
     const logA = Number(meta?.import_log_id_a || 0);
     const logB = Number(meta?.import_log_id_b || 0);
-    const hrefA = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}&import_log_id=${encodeURIComponent(logA)}`;
+    const hrefA = modo === 'excel'
+      ? '/templates/DB_presupuesto_ERI%20PLANTILLA.xlsx'
+      : `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}&import_log_id=${encodeURIComponent(logA)}`;
     const hrefB = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoB)}&import_log_id=${encodeURIComponent(logB)}`;
 
     compViewA.classList.add('disabled');
     compViewB.classList.add('disabled');
 
-    if (logA > 0) {
+    if (modo === 'excel') {
+      compViewA.href = hrefA;
+      compViewA.classList.remove('disabled');
+    } else if (logA > 0) {
       compViewA.href = hrefA;
       compViewA.classList.remove('disabled');
     }
@@ -439,14 +454,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
     compTableHead.innerHTML = '<tr><th>CLAVE</th><th>DESCRIPCION</th><th>CAMPO</th><th>A</th><th>B</th><th>DELTA</th></tr>';
     compTableBody.innerHTML = rows.map((row) => {
-      const deltaValue = parseNumberSafe(row?.DELTA ?? 0);
+      const deltaValue = parseNumberSafe(row?.DELTA ?? row?.delta ?? 0);
       const deltaClass = Math.abs(deltaValue) < 0.000001 ? 'text-muted' : 'fw-bold eri-comp-cell-diff';
       return `<tr>
-        <td>${escapeHtml(row?.CLAVE ?? '')}</td>
+        <td>${escapeHtml(row?.CLAVE ?? row?.cuenta ?? '')}</td>
         <td>${escapeHtml(row?.DESCRIPCION ?? '')}</td>
-        <td>${escapeHtml(row?.CAMPO ?? '')}</td>
-        <td class="text-end">${escapeHtml(fmt(row?.VALOR_A ?? 0))}</td>
-        <td class="text-end">${escapeHtml(fmt(row?.VALOR_B ?? 0))}</td>
+        <td>${escapeHtml(row?.CAMPO ?? row?.mes ?? '')}</td>
+        <td class="text-end">${escapeHtml(fmt(row?.VALOR_A ?? row?.valor_excel ?? 0))}</td>
+        <td class="text-end">${escapeHtml(fmt(row?.VALOR_B ?? row?.valor_import ?? 0))}</td>
         <td class="text-end ${deltaClass}">${escapeHtml(fmt(deltaValue))}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="text-muted">Sin datos para mostrar.</td></tr>';
@@ -458,15 +473,18 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       return;
     }
     const params = new URLSearchParams({
-      tab: currentMeta.tab || 'ERI',
-      tipo_a: currentMeta.tipo_a || 'REAL',
+      tab: currentMeta.tab || currentTab,
+      tipo_a: currentMeta.tipo_a || (String(compModo?.value || 'import') === 'excel' ? 'EXCEL' : 'REAL'),
       tipo_b: currentMeta.tipo_b || 'PRESUPUESTO',
       solo_diferencias: compOnlyDiff.checked ? '1' : '0',
       import_log_id_a: String(currentMeta.import_log_id_a || ''),
       import_log_id_b: String(currentMeta.import_log_id_b || ''),
     });
 
-    const url = `api/importaciones/exportar_diferencias.php?${params.toString()}`;
+    const exportEndpoint = String(compModo?.value || 'import') === 'excel'
+      ? 'api/importaciones/exportar_diferencias_excel.php'
+      : 'api/importaciones/exportar_diferencias.php';
+    const url = `${exportEndpoint}?${params.toString()}`;
     const response = await fetch(url, { headers: { 'Accept': 'text/csv,application/json' } });
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
 
@@ -518,17 +536,23 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const tipoA = String(compTipoA.value || 'REAL').trim().toUpperCase();
     const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
     const onlyDiff = compOnlyDiff.checked ? '1' : '0';
-    const url = `api/importaciones/comparativo.php?tab=ERI&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
-    const data = await fetchJsonSafely(url);
+    const modo = String(compModo?.value || 'import');
+    const endpoint = modo === 'excel' ? 'api/importaciones/comparativo_excel.php' : 'api/importaciones/comparativo.php';
+    const query = modo === 'excel'
+      ? `tab=${encodeURIComponent(currentTab)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`
+      : `tab=${encodeURIComponent(currentTab)}&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
+    const url = `${endpoint}?${query}`;
+    const payload = await fetchJsonSafely(url);
+    const data = payload?.data || {};
 
     const allRows = Array.isArray(data?.diferencias) ? data.diferencias : [];
     currentComparativo = compOnlyDiff.checked
-      ? allRows.filter((row) => Math.abs(parseNumberSafe(row?.DELTA ?? 0)) > 0.000001)
+      ? allRows.filter((row) => Math.abs(parseNumberSafe(row?.DELTA ?? row?.delta ?? 0)) > 0.000001)
       : allRows;
     currentMeta = data?.meta || null;
     renderComparativoSummary(data.resumen || {});
     renderComparativoTable(currentComparativo);
-    setViewExcelLinks(currentMeta || {});
+    setViewExcelLinks(currentMeta || {}, modo);
   };
 
   const load = async () => {
@@ -559,6 +583,11 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
   if (compCompareBtn) {
     compCompareBtn.addEventListener('click', () => runComparativo().catch((e) => {
+      compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+    }));
+  }
+  if (compModo) {
+    compModo.addEventListener('change', () => runComparativo().catch((e) => {
       compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
     }));
   }

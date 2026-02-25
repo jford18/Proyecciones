@@ -8,8 +8,7 @@ use App\db\Db;
 
 function comparativoNormalizeTab(string $tab): string
 {
-    $value = strtolower(trim($tab));
-    return $value === 'eri' ? 'ingresos' : $value;
+    return strtoupper(trim($tab));
 }
 
 function comparativoBuildPdo(): PDO
@@ -203,7 +202,7 @@ function comparativoIndexRows(array $rows): array
 
 function comparativoBuild(array $params): array
 {
-    $tab = comparativoNormalizeTab((string) ($params['tab'] ?? 'eri'));
+    $tab = comparativoNormalizeTab((string) ($params['tab'] ?? ''));
     $tipoA = strtoupper(trim((string) ($params['tipo_a'] ?? 'REAL')));
     $tipoB = strtoupper(trim((string) ($params['tipo_b'] ?? 'PRESUPUESTO')));
     $onlyDiff = ((int) ($params['solo_diferencias'] ?? 0)) === 1;
