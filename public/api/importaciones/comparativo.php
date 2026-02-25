@@ -11,19 +11,19 @@ require __DIR__ . '/comparativo_shared.php';
 
 $traceId = uniqid('cmp_', true);
 
-function comparativoRespond(array $payload): never
+function comparativoRespond(array $payload, int $status = 200): never
 {
     if (ob_get_length()) {
         ob_clean();
     }
 
     header('Content-Type: application/json; charset=utf-8');
-    http_response_code(200);
+    http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
-function comparativoError(string $traceId, Throwable $e, string $message = 'No fue posible generar el comparativo.'): never
+function comparativoError(string $traceId, Throwable $e, string $message = 'No fue posible generar el comparativo.', int $status = 500): never
 {
     error_log(sprintf('[COMPARATIVO][%s] %s in %s:%d', $traceId, $e->getMessage(), $e->getFile(), $e->getLine()));
     comparativoRespond([
@@ -31,7 +31,7 @@ function comparativoError(string $traceId, Throwable $e, string $message = 'No f
         'message' => $message,
         'detail' => $e->getMessage(),
         'trace_id' => $traceId,
-    ]);
+    ], $status);
 }
 
 set_error_handler(static function (int $severity, string $message, string $file = '', int $line = 0): bool {
@@ -92,9 +92,9 @@ try {
         ],
     ]);
 } catch (InvalidArgumentException $e) {
-    comparativoError($traceId, $e, 'Solicitud inválida.');
+    comparativoError($traceId, $e, 'Solicitud inválida.', 400);
 } catch (RuntimeException $e) {
-    comparativoError($traceId, $e);
+    comparativoError($traceId, $e, 'No fue posible generar el comparativo.', 500);
 } catch (Throwable $e) {
-    comparativoError($traceId, $e);
+    comparativoError($traceId, $e, 'No fue posible generar el comparativo.', 500);
 }
