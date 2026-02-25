@@ -32,6 +32,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
           <?php foreach ($months as $month): ?>
             <th class="text-center"><?= $month ?></th><th class="text-center">%</th>
           <?php endforeach; ?>
+          <th class="text-center eri-sticky-total">TOTAL</th>
+          <th class="text-center eri-sticky-pct">%</th>
         </tr>
         </thead>
         <tbody id="eri-tbody"></tbody>
@@ -63,6 +65,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
 
   const buildUrl = (format = 'json') => `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number(rentaInput.value || 25) / 100).toString())}&format=${format}`;
 
@@ -122,6 +125,35 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
   const renderRows = (rows) => {
     tbody.innerHTML = '';
+
+    const rowTotalByIndex = rows.map((row) => months.reduce((acc, month) => acc + Number(row[month] || 0), 0));
+    const blockTotals = {};
+
+    rows.forEach((row, index) => {
+      const code = String(row.CODE || '').trim();
+      const block = code.charAt(0);
+      if (!/[4-9]/.test(block)) {
+        return;
+      }
+      if (String(row.TYPE || '').toUpperCase() === 'TOTAL') {
+        blockTotals[block] = rowTotalByIndex[index];
+      }
+    });
+
+    rows.forEach((row, index) => {
+      const code = String(row.CODE || '').trim();
+      const block = code.charAt(0);
+      if (!/[4-9]/.test(block) || blockTotals[block] != null) {
+        return;
+      }
+      blockTotals[block] = rows.reduce((acc, current, currentIndex) => {
+        const currentCode = String(current.CODE || '').trim();
+        const isSameBlock = currentCode.charAt(0) === block;
+        const isDetail = String(current.TYPE || '').toUpperCase() === 'DETAIL';
+        return acc + (isSameBlock && isDetail ? rowTotalByIndex[currentIndex] : 0);
+      }, 0);
+    });
+
     rows.forEach((row) => {
       const tr = document.createElement('tr');
       tr.classList.add(`eri-${String(row.TYPE || '').toLowerCase()}`);
@@ -152,6 +184,22 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         tdPct.classList.add('text-end');
         tr.appendChild(tdPct);
       });
+
+      const rowTotal = months.reduce((acc, month) => acc + Number(row[month] || 0), 0);
+      const block = String(row.CODE || '').trim().charAt(0);
+      const denominator = /[4-9]/.test(block) ? Number(blockTotals[block] || 0) : 0;
+      const rowPct = denominator === 0 ? 0 : (rowTotal / denominator) * 100;
+
+      const tdTotal = document.createElement('td');
+      tdTotal.textContent = fmt(rowTotal);
+      tdTotal.classList.add('text-end', 'eri-sticky-total');
+      tr.appendChild(tdTotal);
+
+      const tdTotalPct = document.createElement('td');
+      tdTotalPct.textContent = fmtPct(rowPct);
+      tdTotalPct.classList.add('text-end', 'eri-sticky-pct');
+      tr.appendChild(tdTotalPct);
+
       tbody.appendChild(tr);
     });
   };
