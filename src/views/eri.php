@@ -54,19 +54,23 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <div id="eri-comparativo-alert" class="mb-2"></div>
         <div class="row g-2 align-items-end mb-3">
           <div class="col-md-3">
+            <label class="form-label">Modo</label>
+            <select id="eri-comp-modo" class="form-select">
+              <option value="import_vs_import" selected>Importación vs importación</option>
+              <option value="excel_vs_sistema">Excel ERI vs Sistema</option>
+            </select>
+          </div>
+          <div class="col-md-3 d-none" id="eri-comp-file-wrap">
+            <label class="form-label">Archivo Excel (ERI)</label>
+            <input id="eri-comp-file" class="form-control" type="file" accept=".xlsx,.xlsm,.xls">
+          </div>
+          <div class="col-md-3" id="eri-comp-tipo-a-wrap">
             <label class="form-label">Tipo A</label>
             <input id="eri-comp-tipo-a" class="form-control" value="REAL">
           </div>
-          <div class="col-md-3">
+          <div class="col-md-3" id="eri-comp-tipo-b-wrap">
             <label class="form-label">Tipo B</label>
             <input id="eri-comp-tipo-b" class="form-control" value="PRESUPUESTO">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Modo</label>
-            <select id="eri-comp-modo" class="form-select">
-              <option value="import" selected>Importación vs importación</option>
-              <option value="excel">Comparar con Excel</option>
-            </select>
           </div>
           <div class="col-md-3 form-check mt-4 pt-2">
             <input id="eri-comp-only-diff" class="form-check-input" type="checkbox" checked>
@@ -81,6 +85,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <div class="d-flex gap-2 mb-3 flex-wrap">
           <a id="eri-comp-view-a" class="btn btn-sm btn-outline-primary disabled" href="#" target="_blank" rel="noopener">Ver como Excel (A)</a>
           <a id="eri-comp-view-b" class="btn btn-sm btn-outline-primary disabled" href="#" target="_blank" rel="noopener">Ver como Excel (B)</a>
+          <a id="eri-comp-view-file" class="btn btn-sm btn-outline-primary d-none disabled" href="#" target="_blank" rel="noopener">Ver Excel (archivo)</a>
+          <a id="eri-comp-view-sistema" class="btn btn-sm btn-outline-primary d-none" href="?r=eri" target="_blank" rel="noopener">Ver ERI (sistema)</a>
         </div>
 
         <div id="eri-comp-resumen" class="row g-2 mb-3"></div>
@@ -120,12 +126,18 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const compAlert = document.getElementById('eri-comparativo-alert');
   const compTipoA = document.getElementById('eri-comp-tipo-a');
   const compTipoB = document.getElementById('eri-comp-tipo-b');
+  const compTipoAWrap = document.getElementById('eri-comp-tipo-a-wrap');
+  const compTipoBWrap = document.getElementById('eri-comp-tipo-b-wrap');
+  const compFileWrap = document.getElementById('eri-comp-file-wrap');
+  const compFileInput = document.getElementById('eri-comp-file');
   const compOnlyDiff = document.getElementById('eri-comp-only-diff');
   const compModo = document.getElementById('eri-comp-modo');
   const compCompareBtn = document.getElementById('eri-comp-compare');
   const compExportCsvBtn = document.getElementById('eri-comp-export-csv');
   const compViewA = document.getElementById('eri-comp-view-a');
   const compViewB = document.getElementById('eri-comp-view-b');
+  const compViewFile = document.getElementById('eri-comp-view-file');
+  const compViewSistema = document.getElementById('eri-comp-view-sistema');
   const compResumen = document.getElementById('eri-comp-resumen');
   const compTable = document.getElementById('eri-comp-table');
   const compTableHead = compTable ? compTable.querySelector('thead') : null;
@@ -134,6 +146,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   let currentRows = [];
   let currentComparativo = null;
   let currentMeta = null;
+  let currentExcelTmpFile = '';
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
@@ -422,24 +435,32 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
   const currentTab = 'ERI';
 
-  const setViewExcelLinks = (meta = {}, modo = 'import') => {
+  const updateModoUi = () => {
+    const modo = String(compModo?.value || 'import_vs_import');
+    const isExcelSistema = modo === 'excel_vs_sistema';
+
+    compTipoAWrap?.classList.toggle('d-none', isExcelSistema);
+    compTipoBWrap?.classList.toggle('d-none', isExcelSistema);
+    compFileWrap?.classList.toggle('d-none', !isExcelSistema);
+
+    compViewA?.classList.toggle('d-none', isExcelSistema);
+    compViewB?.classList.toggle('d-none', isExcelSistema);
+    compViewFile?.classList.toggle('d-none', !isExcelSistema);
+    compViewSistema?.classList.toggle('d-none', !isExcelSistema);
+  };
+
+  const setViewExcelLinks = (meta = {}, modo = 'import_vs_import') => {
     const tab = String(meta?.tab || currentTab).toUpperCase();
     const tipoA = meta?.tipo_a || 'REAL';
     const tipoB = meta?.tipo_b || 'PRESUPUESTO';
     const logA = Number(meta?.import_log_id_a || 0);
     const logB = Number(meta?.import_log_id_b || 0);
-    const hrefA = modo === 'excel'
-      ? '/templates/DB_presupuesto_ERI%20PLANTILLA.xlsx'
-      : `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}&import_log_id=${encodeURIComponent(logA)}`;
+    const hrefA = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}&import_log_id=${encodeURIComponent(logA)}`;
     const hrefB = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoB)}&import_log_id=${encodeURIComponent(logB)}`;
 
     compViewA.classList.add('disabled');
     compViewB.classList.add('disabled');
-
-    if (modo === 'excel') {
-      compViewA.href = hrefA;
-      compViewA.classList.remove('disabled');
-    } else if (logA > 0) {
+    if (logA > 0) {
       compViewA.href = hrefA;
       compViewA.classList.remove('disabled');
     }
@@ -447,10 +468,39 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       compViewB.href = hrefB;
       compViewB.classList.remove('disabled');
     }
+
+    if (compViewFile) {
+      compViewFile.classList.add('disabled');
+      if (currentExcelTmpFile) {
+        compViewFile.href = `/api/reportes/eri_comparativo_excel_export.php?file_tmp=${encodeURIComponent(currentExcelTmpFile)}&anio=${encodeURIComponent(yearInput.value || '')}&tipo=PRESUPUESTO&solo_diferencias=0`;
+        compViewFile.classList.remove('disabled');
+      }
+    }
   };
 
   const renderComparativoTable = (rows = []) => {
     if (!compTableHead || !compTableBody) return;
+
+    const modo = String(compModo?.value || 'import_vs_import');
+    if (modo === 'excel_vs_sistema') {
+      compTableHead.innerHTML = '<tr><th>CODIGO</th><th>NOMBRE</th><th>CAMPO</th><th>A</th><th>B</th><th>DIF</th><th>DIF_ABS</th><th>DIF_PCT</th></tr>';
+      compTableBody.innerHTML = rows.map((row) => {
+        const dif = parseNumberSafe(row?.DIF ?? 0);
+        const deltaClass = Math.abs(dif) < 0.000001 ? 'text-muted' : 'fw-bold eri-comp-cell-diff';
+        const difPct = row?.DIF_PCT == null ? '' : `${Number(row.DIF_PCT).toFixed(2)}%`;
+        return `<tr>
+          <td>${escapeHtml(row?.CODIGO ?? '')}</td>
+          <td>${escapeHtml(row?.NOMBRE ?? '')}</td>
+          <td>${escapeHtml(row?.CAMPO ?? '')}</td>
+          <td class="text-end">${row?.A == null ? '' : escapeHtml(fmt(row.A))}</td>
+          <td class="text-end">${row?.B == null ? '' : escapeHtml(fmt(row.B))}</td>
+          <td class="text-end ${deltaClass}">${escapeHtml(fmt(dif))}</td>
+          <td class="text-end">${escapeHtml(fmt(row?.DIF_ABS ?? 0))}</td>
+          <td class="text-end">${escapeHtml(difPct)}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="8" class="text-muted">Sin datos para mostrar.</td></tr>';
+      return;
+    }
 
     compTableHead.innerHTML = '<tr><th>CLAVE</th><th>DESCRIPCION</th><th>CAMPO</th><th>A</th><th>B</th><th>DELTA</th></tr>';
     compTableBody.innerHTML = rows.map((row) => {
@@ -472,17 +522,21 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       alert('No hay comparativo para exportar.');
       return;
     }
+    const modo = String(compModo?.value || 'import_vs_import');
     const params = new URLSearchParams({
       tab: currentMeta.tab || currentTab,
-      tipo_a: currentMeta.tipo_a || (String(compModo?.value || 'import') === 'excel' ? 'EXCEL' : 'REAL'),
+      tipo_a: currentMeta.tipo_a || 'REAL',
       tipo_b: currentMeta.tipo_b || 'PRESUPUESTO',
       solo_diferencias: compOnlyDiff.checked ? '1' : '0',
       import_log_id_a: String(currentMeta.import_log_id_a || ''),
       import_log_id_b: String(currentMeta.import_log_id_b || ''),
+      anio: String(yearInput?.value || ''),
+      tipo: String(currentMeta.tipo || 'PRESUPUESTO'),
+      file_tmp: currentExcelTmpFile,
     });
 
-    const exportEndpoint = String(compModo?.value || 'import') === 'excel'
-      ? '/api/importaciones/exportar_diferencias_excel.php'
+    const exportEndpoint = modo === 'excel_vs_sistema'
+      ? '/api/reportes/eri_comparativo_excel_export.php'
       : '/api/importaciones/exportar_diferencias.php';
     const url = `${exportEndpoint}?${params.toString()}`;
     const response = await fetch(url, { headers: { 'Accept': 'text/csv,application/json' } });
@@ -541,20 +595,58 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const tipoA = String(compTipoA.value || 'REAL').trim().toUpperCase();
     const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
     const onlyDiff = compOnlyDiff.checked ? '1' : '0';
-    const modo = String(compModo?.value || 'import');
-    const endpoint = modo === 'excel' ? '/api/importaciones/comparativo_excel.php' : '/api/importaciones/comparativo.php';
-    const query = modo === 'excel'
-      ? `tab=${encodeURIComponent(currentTab)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`
-      : `tab=${encodeURIComponent(currentTab)}&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
-    const url = `${endpoint}?${query}`;
+    const modo = String(compModo?.value || 'import_vs_import');
+
+    if (modo === 'excel_vs_sistema') {
+      const file = compFileInput?.files?.[0] || null;
+      if (!file) {
+        throw new Error('No se pudo leer el Excel ERI.');
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('solo_diferencias', onlyDiff);
+      formData.append('anio', String(yearInput?.value || ''));
+      formData.append('tipo', tipoB || 'PRESUPUESTO');
+
+      const response = await fetch('/api/reportes/eri_comparativo_excel.php', {
+        method: 'POST',
+        body: formData,
+        headers: { Accept: 'application/json' },
+      });
+      const raw = await response.text();
+      let payload = null;
+      try { payload = JSON.parse(raw); } catch (error) {
+        throw new Error('No se pudo leer el Excel ERI.');
+      }
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.detail || payload?.message || 'No fue posible generar el comparativo.');
+      }
+
+      currentComparativo = Array.isArray(payload?.rows) ? payload.rows : [];
+      currentMeta = payload?.meta || {};
+      currentExcelTmpFile = String(currentMeta?.file_tmp || '');
+      renderComparativoSummary({
+        total_items: currentComparativo.length,
+        total_diferencias: currentComparativo.length,
+        tipo_b: currentMeta?.tipo || tipoB,
+        tab: currentMeta?.tab || currentTab,
+      });
+      renderComparativoTable(currentComparativo);
+      compAlert.innerHTML = `<div class="alert alert-success py-2 mb-0">${escapeHtml(payload?.message || `Comparativo generado: ${currentComparativo.length} diferencias.`)}</div>`;
+      setViewExcelLinks(currentMeta || {}, modo);
+      return;
+    }
+
+    const url = `/api/importaciones/comparativo.php?tab=${encodeURIComponent(currentTab)}&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
     const payload = await fetchJsonSafely(url);
     const data = payload?.data || {};
-
     const allRows = Array.isArray(data?.diferencias) ? data.diferencias : [];
     currentComparativo = compOnlyDiff.checked
       ? allRows.filter((row) => Math.abs(parseNumberSafe(row?.DELTA ?? row?.delta ?? 0)) > 0.000001)
       : allRows;
     currentMeta = data?.meta || null;
+    currentExcelTmpFile = '';
     renderComparativoSummary(data.resumen || {});
     renderComparativoTable(currentComparativo);
     setViewExcelLinks(currentMeta || {}, modo);
@@ -592,9 +684,12 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     }));
   }
   if (compModo) {
-    compModo.addEventListener('change', () => runComparativo().catch((e) => {
-      compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
-    }));
+    compModo.addEventListener('change', () => {
+      updateModoUi();
+      compAlert.innerHTML = '';
+      compResumen.innerHTML = '';
+      if (compTableBody) compTableBody.innerHTML = '';
+    });
   }
   if (compOnlyDiff) {
     compOnlyDiff.addEventListener('change', () => runComparativo().catch((e) => {
@@ -607,6 +702,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     }));
   }
 
+  updateModoUi();
   load().catch((e) => alert(e.message));
 })();
 </script>
