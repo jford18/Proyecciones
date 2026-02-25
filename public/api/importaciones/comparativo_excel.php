@@ -45,7 +45,7 @@ function cmpExcelResolveDateColumn(PDO $pdo): ?string
         $columns[strtoupper((string) $column)] = (string) $column;
     }
 
-    foreach (['FECHA_CREACION', 'CREATED_AT', 'FECHA_IMPORTACION', 'FECHA'] as $candidate) {
+    foreach (['FECHA_CARGA', 'FECHA_CREACION', 'CREATED_AT', 'FECHA_IMPORTACION', 'FECHA'] as $candidate) {
         if (isset($columns[$candidate])) {
             return $columns[$candidate];
         }
@@ -61,8 +61,8 @@ function cmpExcelFetchLatestImportLog(PDO $pdo, string $tab, string $tipo, ?stri
     if ($dateColumn !== null) {
         $safe = preg_replace('/[^A-Za-z0-9_]/', '', $dateColumn);
         if ($safe !== null && $safe !== '') {
-            $select .= ', `' . $safe . '` AS FECHA_CREACION';
-            $orderBy = 'FECHA_CREACION DESC, ID DESC';
+            $select .= ', `' . $safe . '` AS FECHA_CARGA';
+            $orderBy = 'FECHA_CARGA DESC, ID DESC';
         }
     }
 
