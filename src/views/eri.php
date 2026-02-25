@@ -517,17 +517,22 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const fetchJsonSafely = async (url) => {
     const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
     const raw = await response.text();
-    let data;
+    let data = null;
+
     try {
       data = JSON.parse(raw);
     } catch (error) {
+      if (!response.ok) {
+        throw new Error(raw || `Error HTTP ${response.status}`);
+      }
       console.error('[COMPARATIVO] Respuesta no JSON', { url, raw });
       throw new Error('El servidor devolvió una respuesta inválida. Revisa consola para más detalle.');
     }
 
     if (!response.ok || !data?.ok) {
-      throw new Error(data?.message || `Error HTTP ${response.status}`);
+      throw new Error(data?.detail || data?.message || `Error HTTP ${response.status}`);
     }
+
     return data;
   };
 
