@@ -63,9 +63,127 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const exportLink = document.getElementById('eri-exportar');
   const drawerBody = document.getElementById('eri-origen-body');
   const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
+  const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  let currentRows = [];
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
+  const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+  const parseNumberSafe = (value) => {
+    if (value == null) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+    let text = String(value).trim();
+    if (!text || text === '-') return 0;
+
+    let isNegative = false;
+    if (/^\(.*\)$/.test(text)) {
+      isNegative = true;
+      text = text.slice(1, -1).trim();
+    }
+
+    text = text.replace(/\s+/g, '').replace(/[^0-9,.-]/g, '');
+    if (!text || text === '-' || text === ',' || text === '.') return 0;
+
+    const hasComma = text.includes(',');
+    const hasDot = text.includes('.');
+    if (hasComma && hasDot) {
+      if (text.lastIndexOf(',') > text.lastIndexOf('.')) {
+        text = text.replace(/\./g, '').replace(',', '.');
+      } else {
+        text = text.replace(/,/g, '');
+      }
+    } else if (hasComma) {
+      const commaCount = (text.match(/,/g) || []).length;
+      text = commaCount > 1 ? text.replace(/,/g, '') : text.replace(',', '.');
+    } else if (hasDot) {
+      const dotCount = (text.match(/\./g) || []).length;
+      if (dotCount > 1) {
+        text = text.replace(/\./g, '');
+      } else {
+        const decimals = text.split('.').pop() || '';
+        if (decimals.length === 3) {
+          text = text.replace(/\./g, '');
+        }
+      }
+    }
+
+    const parsed = Number(text);
+    if (!Number.isFinite(parsed)) return 0;
+    return isNegative ? -Math.abs(parsed) : parsed;
+  };
+
+  const asNegative = (value) => {
+    const n = parseNumberSafe(value);
+    return n > 0 ? -n : n;
+  };
+
+  const normalizeLabel = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
+
+  const recalcEriCierre = (rows, inputs = {}) => {
+    if (!Array.isArray(rows) || rows.length === 0) return rows;
+
+    const tasaPart = parseNumberSafe(inputs.participacion) / 100;
+    const tasaImp = parseNumberSafe(inputs.renta) / 100;
+    const indexByDescription = rows.reduce((acc, row, idx) => {
+      acc[idx] = normalizeLabel(row?.DESCRIPCION);
+      return acc;
+    }, {});
+
+    const findRow = (matcher) => rows.find((_, idx) => matcher(indexByDescription[idx] || ''));
+    const rowAntes = findRow((label) => label.includes('RESULTADO ANTES DE PARTICIPACION'));
+    const rowPart = findRow((label) => label.includes('PARTICIPACION A TRABAJADORES'));
+    const rowImp = findRow((label) => label.includes('IMPUESTO A LA RENTA'));
+    const rowResultado = findRow((label) => label.includes('RESULTADO DEL PERIODO'));
+
+    if (!rowAntes || !rowPart || !rowImp || !rowResultado) {
+      return rows;
+    }
+
+    const partIndex = rows.indexOf(rowPart);
+    const impIndex = rows.indexOf(rowImp);
+    const partLabel = indexByDescription[partIndex] || '';
+    const impLabel = indexByDescription[impIndex] || '';
+    const shouldForcePart = partLabel.includes('(-)') || partLabel.includes('PARTICIPACION');
+    const shouldForceImp = impLabel.includes('(-)') || impLabel.includes('IMPUESTO');
+
+    rowResultado.__eriWarnings = {};
+
+    months.forEach((month) => {
+      const A = parseNumberSafe(rowAntes[month]);
+      let Praw = parseNumberSafe(rowPart[month]);
+      let Iraw = parseNumberSafe(rowImp[month]);
+
+      if (Number.isFinite(tasaPart) && tasaPart >= 0 && Number.isFinite(tasaImp) && tasaImp >= 0) {
+        Praw = A > 0 ? -round2(A * tasaPart) : 0;
+        const base = A + Praw;
+        Iraw = base > 0 ? -round2(base * tasaImp) : 0;
+      }
+
+      const P = shouldForcePart ? asNegative(Praw) : Praw;
+      const I = shouldForceImp ? asNegative(Iraw) : Iraw;
+      const R = round2(A + P + I);
+
+      rowPart[month] = round2(P);
+      rowImp[month] = round2(I);
+      rowResultado[month] = R;
+
+      const diff = Math.abs(R - (A + P + I));
+      if (diff > 0.02) {
+        console.warn('[ERI][VALIDATION] mismatch', { mes: month, A, P, I, R, diff });
+        if (isDebugMode) {
+          rowResultado.__eriWarnings[month] = true;
+        }
+      }
+    });
+
+    return rows;
+  };
 
   const buildUrl = (format = 'json') => `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number(rentaInput.value || 25) / 100).toString())}&format=${format}`;
 
@@ -170,7 +288,10 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         const tdVal = document.createElement('td');
         const value = Number(row[month] || 0);
         tdVal.classList.add('text-end', 'eri-cell-trace');
-        tdVal.innerHTML = `<span>${fmt(value)}</span><span class="eri-trace-icon" title="Ver origen">🔎</span>`;
+        const warningBadge = row.__eriWarnings?.[month] && isDebugMode
+          ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
+          : '';
+        tdVal.innerHTML = `<span>${fmt(value)}</span>${warningBadge}<span class="eri-trace-icon" title="Ver origen">🔎</span>`;
         if (row.CODE) {
           tdVal.dataset.code = row.CODE;
           tdVal.dataset.desc = row.DESCRIPCION || '';
@@ -218,11 +339,25 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     if (!response.ok || !(data.success || data.SUCCESS)) {
       throw new Error(data.message || data.MESSAGE || 'No fue posible calcular ERI.');
     }
-    renderRows(data.rows || data.ROWS || []);
+    currentRows = recalcEriCierre(data.rows || data.ROWS || [], {
+      participacion: partInput.value,
+      renta: rentaInput.value,
+    });
+    renderRows(currentRows);
     exportLink.href = buildUrl('xlsx');
   };
 
   document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
+  [partInput, rentaInput].forEach((input) => {
+    input.addEventListener('input', () => {
+      if (!Array.isArray(currentRows) || currentRows.length === 0) return;
+      recalcEriCierre(currentRows, {
+        participacion: partInput.value,
+        renta: rentaInput.value,
+      });
+      renderRows(currentRows);
+    });
+  });
   load().catch((e) => alert(e.message));
 })();
 </script>
