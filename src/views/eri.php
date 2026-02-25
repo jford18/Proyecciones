@@ -125,6 +125,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   let currentRows = [];
   let currentComparativo = null;
+  let currentMeta = null;
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
@@ -396,13 +397,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
   const renderComparativoSummary = (resumen = {}) => {
     const cards = [
-      ['Iguales', resumen.iguales ?? 0],
-      ['Cambios', resumen.cambios ?? 0],
-      ['Nuevo en A', resumen.nuevo_en_a ?? 0],
-      ['Falta en A', resumen.falta_en_a ?? 0],
-      ['Total A', resumen.total_a ?? 0],
-      ['Total B', resumen.total_b ?? 0],
-      ['Resultado', resumen.total_resultado ?? 0],
+      ['Total claves', resumen.total_claves ?? 0],
+      ['Con diferencias', resumen.con_diferencias ?? 0],
+      ['Filas en tabla', Array.isArray(currentComparativo) ? currentComparativo.length : 0],
     ];
     compResumen.innerHTML = cards.map(([label, value]) => `
       <div class="col-md-2 col-sm-4 col-6">
@@ -415,80 +412,105 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       </div>`).join('');
   };
 
-  const setViewExcelLinks = (payload) => {
-    const tab = String(payload?.tab || 'ingresos').toLowerCase();
-    const tipoA = payload?.tipo_a || 'REAL';
-    const tipoB = payload?.tipo_b || 'PRESUPUESTO';
-    const hrefA = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}`;
-    const hrefB = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoB)}`;
+  const setViewExcelLinks = (meta = {}) => {
+    const tab = String(meta?.tab || 'ingresos').toLowerCase();
+    const tipoA = meta?.tipo_a || 'REAL';
+    const tipoB = meta?.tipo_b || 'PRESUPUESTO';
+    const logA = Number(meta?.import_log_id_a || 0);
+    const logB = Number(meta?.import_log_id_b || 0);
+    const hrefA = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}&import_log_id=${encodeURIComponent(logA)}`;
+    const hrefB = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoB)}&import_log_id=${encodeURIComponent(logB)}`;
 
-    if (payload?.log_a?.id) {
+    compViewA.classList.add('disabled');
+    compViewB.classList.add('disabled');
+
+    if (logA > 0) {
       compViewA.href = hrefA;
       compViewA.classList.remove('disabled');
     }
-    if (payload?.log_b?.id) {
+    if (logB > 0) {
       compViewB.href = hrefB;
       compViewB.classList.remove('disabled');
     }
   };
 
-  const renderComparativoTable = (payload) => {
-    const columns = Array.isArray(payload?.columnas) ? payload.columnas : [];
-    const filas = Array.isArray(payload?.filas) ? payload.filas : [];
+  const renderComparativoTable = (rows = []) => {
     if (!compTableHead || !compTableBody) return;
 
-    compTableHead.innerHTML = `<tr><th>ESTADO</th><th>KEY</th>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
-    compTableBody.innerHTML = filas.map((row) => {
-      const diff = Array.isArray(row.columnas_diferentes) ? row.columnas_diferentes : [];
-      const rowClass = row.estado === 'NUEVO_EN_A'
-        ? 'eri-comp-row-new-a'
-        : (row.estado === 'FALTA_EN_A' ? 'eri-comp-row-missing-a' : '');
-      return `<tr class="${rowClass}">
-        <td class="fw-bold">${escapeHtml(row.estado || '')}</td>
-        <td>${escapeHtml(row.key || '')}</td>
-        ${columns.map((col) => {
-          const valA = row?.a?.[col] ?? '';
-          const valB = row?.b?.[col] ?? '';
-          const isDiff = row.estado === 'CAMBIO' && diff.includes(col);
-          const cellClass = isDiff ? 'eri-comp-cell-diff' : '';
-          return `<td class="${cellClass}"><div class="small text-muted">A: ${escapeHtml(valA)}</div><div>B: ${escapeHtml(valB)}</div></td>`;
-        }).join('')}
+    compTableHead.innerHTML = '<tr><th>CLAVE</th><th>DESCRIPCION</th><th>CAMPO</th><th>A</th><th>B</th><th>DELTA</th></tr>';
+    compTableBody.innerHTML = rows.map((row) => {
+      const deltaValue = parseNumberSafe(row?.DELTA ?? 0);
+      const deltaClass = Math.abs(deltaValue) < 0.000001 ? 'text-muted' : 'fw-bold eri-comp-cell-diff';
+      return `<tr>
+        <td>${escapeHtml(row?.CLAVE ?? '')}</td>
+        <td>${escapeHtml(row?.DESCRIPCION ?? '')}</td>
+        <td>${escapeHtml(row?.CAMPO ?? '')}</td>
+        <td class="text-end">${escapeHtml(fmt(row?.VALOR_A ?? 0))}</td>
+        <td class="text-end">${escapeHtml(fmt(row?.VALOR_B ?? 0))}</td>
+        <td class="text-end ${deltaClass}">${escapeHtml(fmt(deltaValue))}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="999" class="text-muted">Sin datos para mostrar.</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="text-muted">Sin datos para mostrar.</td></tr>';
   };
 
-  const toCsvCell = (value) => {
-    const raw = String(value ?? '');
-    return `"${raw.replaceAll('"', '""')}"`;
-  };
-
-  const exportComparativoCsv = () => {
-    if (!currentComparativo || !Array.isArray(currentComparativo.filas)) {
+  const exportComparativoCsv = async () => {
+    if (!currentMeta) {
       alert('No hay comparativo para exportar.');
       return;
     }
-    const columns = Array.isArray(currentComparativo.columnas) ? currentComparativo.columnas : [];
-    const headers = ['ESTADO', 'KEY', ...columns.flatMap((col) => [`${col}_A`, `${col}_B`])];
-    const lines = [headers.map(toCsvCell).join(',')];
-
-    currentComparativo.filas.forEach((row) => {
-      const values = [row.estado || '', row.key || ''];
-      columns.forEach((col) => {
-        values.push(row?.a?.[col] ?? '');
-        values.push(row?.b?.[col] ?? '');
-      });
-      lines.push(values.map(toCsvCell).join(','));
+    const params = new URLSearchParams({
+      tab: currentMeta.tab || 'ERI',
+      tipo_a: currentMeta.tipo_a || 'REAL',
+      tipo_b: currentMeta.tipo_b || 'PRESUPUESTO',
+      solo_diferencias: compOnlyDiff.checked ? '1' : '0',
+      import_log_id_a: String(currentMeta.import_log_id_a || ''),
+      import_log_id_b: String(currentMeta.import_log_id_b || ''),
     });
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const url = `api/importaciones/exportar_diferencias.php?${params.toString()}`;
+    const response = await fetch(url, { headers: { 'Accept': 'text/csv,application/json' } });
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+
+    if (contentType.includes('application/json')) {
+      const raw = await response.text();
+      let payload = null;
+      try {
+        payload = JSON.parse(raw);
+      } catch (error) {
+        console.error('[COMPARATIVO][EXPORT] Respuesta inválida', { raw });
+      }
+      throw new Error(payload?.message || `Error HTTP ${response.status} al exportar diferencias.`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Error HTTP ${response.status} al exportar diferencias.`);
+    }
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `comparativo_${currentComparativo.tab || 'tab'}_${Date.now()}.csv`;
+    a.href = blobUrl;
+    a.download = `comparativo_${(currentMeta.tab || 'tab').toLowerCase()}_${Date.now()}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(blobUrl);
+  };
+
+  const fetchJsonSafely = async (url) => {
+    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const raw = await response.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (error) {
+      console.error('[COMPARATIVO] Respuesta no JSON', { url, raw });
+      throw new Error('El servidor devolvió una respuesta inválida. Revisa consola para más detalle.');
+    }
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.message || `Error HTTP ${response.status}`);
+    }
+    return data;
   };
 
   const runComparativo = async () => {
@@ -497,16 +519,16 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
     const onlyDiff = compOnlyDiff.checked ? '1' : '0';
     const url = `api/importaciones/comparativo.php?tab=ERI&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
-    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      throw new Error(data.message || `Error HTTP ${response.status}`);
-    }
+    const data = await fetchJsonSafely(url);
 
-    currentComparativo = data;
+    const allRows = Array.isArray(data?.diferencias) ? data.diferencias : [];
+    currentComparativo = compOnlyDiff.checked
+      ? allRows.filter((row) => Math.abs(parseNumberSafe(row?.DELTA ?? 0)) > 0.000001)
+      : allRows;
+    currentMeta = data?.meta || null;
     renderComparativoSummary(data.resumen || {});
-    renderComparativoTable(data);
-    setViewExcelLinks(data);
+    renderComparativoTable(currentComparativo);
+    setViewExcelLinks(currentMeta || {});
   };
 
   const load = async () => {
@@ -546,7 +568,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     }));
   }
   if (compExportCsvBtn) {
-    compExportCsvBtn.addEventListener('click', exportComparativoCsv);
+    compExportCsvBtn.addEventListener('click', () => exportComparativoCsv().catch((e) => {
+      compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+    }));
   }
 
   load().catch((e) => alert(e.message));
