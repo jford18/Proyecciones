@@ -102,6 +102,31 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   </div>
 </div>
 
+
+<div class="modal fade" id="eriDesgloseModal" tabindex="-1" aria-labelledby="eriDesgloseModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eriDesgloseModalLabel">Desglose: Resultado antes de participación e impuestos</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="eri-desglose-alert" class="mb-2"></div>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle" id="eri-desglose-table">
+            <thead>
+              <tr>
+                <th>CODIGO</th><th>NOMBRE</th><th class="text-end">VALOR</th><th>SIGNO (+/-)</th><th>SECCION</th><th class="text-end">ACUMULADO</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="offcanvas offcanvas-end" tabindex="-1" id="eriOrigenDrawer" aria-labelledby="eriOrigenDrawerLabel">
   <div class="offcanvas-header">
     <h5 id="eriOrigenDrawerLabel" class="offcanvas-title">ORIGEN DEL VALOR</h5>
@@ -142,15 +167,22 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const compTable = document.getElementById('eri-comp-table');
   const compTableHead = compTable ? compTable.querySelector('thead') : null;
   const compTableBody = compTable ? compTable.querySelector('tbody') : null;
+  const desgloseAlert = document.getElementById('eri-desglose-alert');
+  const desgloseTableBody = document.querySelector('#eri-desglose-table tbody');
+  const desgloseModal = new bootstrap.Modal('#eriDesgloseModal');
   const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   let currentRows = [];
   let currentComparativo = null;
   let currentMeta = null;
   let currentExcelTmpFile = '';
 
-  const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (value) => {
+    const rounded = Math.round(Number(value || 0));
+    const abs = Math.abs(rounded).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return rounded < 0 ? `(${abs})` : abs;
+  };
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
-  const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  const round0 = (value) => Math.round(Number(value || 0));
 
   const parseNumberSafe = (value) => {
     if (value == null) return 0;
@@ -242,21 +274,21 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       let Iraw = parseNumberSafe(rowImp[month]);
 
       if (Number.isFinite(tasaPart) && tasaPart >= 0 && Number.isFinite(tasaImp) && tasaImp >= 0) {
-        Praw = A > 0 ? -round2(A * tasaPart) : 0;
+        Praw = A > 0 ? -round0(A * tasaPart) : 0;
         const base = A + Praw;
-        Iraw = base > 0 ? -round2(base * tasaImp) : 0;
+        Iraw = base > 0 ? -round0(base * tasaImp) : 0;
       }
 
       const P = shouldForcePart ? asNegative(Praw) : Praw;
       const I = shouldForceImp ? asNegative(Iraw) : Iraw;
-      const R = round2(A + P + I);
+      const R = round0(A + P + I);
 
-      rowPart[month] = round2(P);
-      rowImp[month] = round2(I);
+      rowPart[month] = round0(P);
+      rowImp[month] = round0(I);
       rowResultado[month] = R;
 
       const diff = Math.abs(R - (A + P + I));
-      if (diff > 0.02) {
+      if (diff > 0.5) {
         console.warn('[ERI][VALIDATION] mismatch', { mes: month, A, P, I, R, diff });
         if (isDebugMode) {
           rowResultado.__eriWarnings[month] = true;
@@ -323,6 +355,35 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     `;
   };
 
+
+  const openDesgloseResultadoAntes = async () => {
+    const periodo = Number(yearInput.value || new Date().getFullYear());
+    const tipo = new URLSearchParams(window.location.search).get('tipo') || 'PRESUPUESTO';
+    desgloseAlert.innerHTML = '<div class="text-muted">Cargando desglose...</div>';
+    desgloseTableBody.innerHTML = '';
+    desgloseModal.show();
+
+    const url = `/api/eri/desglose.php?periodo=${encodeURIComponent(periodo)}&tipo=${encodeURIComponent(tipo)}`;
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    const data = await response.json();
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.detail || data?.message || 'No se pudo obtener el desglose.');
+    }
+
+    desgloseAlert.innerHTML = `<div class="alert alert-info py-2 mb-2"><strong>Total:</strong> ${fmt(data.total || 0)}</div>`;
+    const items = Array.isArray(data.items) ? data.items : [];
+    desgloseTableBody.innerHTML = items.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.codigo || '')}</td>
+        <td>${escapeHtml(item.nombre || '')}</td>
+        <td class="text-end">${fmt(item.valor || 0)}</td>
+        <td>${escapeHtml(item.signo || '+')}</td>
+        <td>${escapeHtml(item.seccion || '')}</td>
+        <td class="text-end">${fmt(item.acumulado || 0)}</td>
+      </tr>
+    `).join('');
+  };
+
   const renderRows = (rows) => {
     tbody.innerHTML = '';
 
@@ -364,6 +425,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
       const tdDesc = document.createElement('td');
       tdDesc.textContent = row.DESCRIPCION || '';
+      if (Number(row.ROW || 0) === 358) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-secondary ms-2';
+        btn.textContent = 'Ver desglose';
+        btn.dataset.action = 'eri-desglose-resultado-antes';
+        tdDesc.appendChild(btn);
+      }
       tr.appendChild(tdDesc);
 
       months.forEach((month) => {
@@ -408,6 +477,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
 
   tbody.addEventListener('click', (event) => {
+    const desgloseBtn = event.target.closest('button[data-action="eri-desglose-resultado-antes"]');
+    if (desgloseBtn) {
+      openDesgloseResultadoAntes().catch((e) => {
+        desgloseAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+        desgloseModal.show();
+      });
+      return;
+    }
     const cell = event.target.closest('td.eri-cell-trace[data-code]');
     if (!cell) return;
     openTrace(cell.dataset.code, cell.dataset.desc || '', Number(cell.dataset.month || 0), Number(cell.dataset.value || 0)).catch((e) => {

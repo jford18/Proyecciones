@@ -10,6 +10,11 @@ class EriService
 {
     private const MONTHS = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
     private const MONTH_TO_DB = ['ENERO' => 'ENE', 'FEBRERO' => 'FEB', 'MARZO' => 'MAR', 'ABRIL' => 'ABR', 'MAYO' => 'MAY', 'JUNIO' => 'JUN', 'JULIO' => 'JUL', 'AGOSTO' => 'AGO', 'SEPTIEMBRE' => 'SEP', 'OCTUBRE' => 'OCT', 'NOVIEMBRE' => 'NOV', 'DICIEMBRE' => 'DIC'];
+    private const RESULTADO_ANTES_COMPONENTS = [
+        ['row' => 257, 'sign' => 1, 'section' => 'OPERACIÓN'],
+        ['row' => 328, 'sign' => 1, 'section' => 'GASTOS FINANCIEROS'],
+        ['row' => 356, 'sign' => 1, 'section' => 'OTROS EGRESOS'],
+    ];
 
     public function __construct(private PDO $pdo) {}
 
@@ -76,6 +81,48 @@ class EriService
         unset($row);
 
         return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
+    }
+
+    public function buildResultadoAntesDesglose(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25): array
+    {
+        $payload = $this->build($periodo, $tasaPart, $tasaRenta);
+        $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+        $rowsByRow = [];
+        foreach ($rows as $row) {
+            $rowNumber = (int) ($row['ROW'] ?? 0);
+            if ($rowNumber > 0) {
+                $rowsByRow[$rowNumber] = $row;
+            }
+        }
+
+        $items = [];
+        $total = 0.0;
+        foreach (self::RESULTADO_ANTES_COMPONENTS as $component) {
+            $rowNumber = (int) ($component['row'] ?? 0);
+            $sign = ((int) ($component['sign'] ?? 1)) >= 0 ? '+' : '-';
+            $source = $rowsByRow[$rowNumber] ?? [];
+            $value = $this->sumMonths($source);
+            $signedValue = $sign === '+' ? $value : -$value;
+            $total += $signedValue;
+
+            $items[] = [
+                'row' => $rowNumber,
+                'codigo' => (string) ($source['CODE'] ?? ''),
+                'nombre' => (string) ($source['DESCRIPCION'] ?? ''),
+                'valor' => $signedValue,
+                'valor_base' => $value,
+                'signo' => $sign,
+                'seccion' => (string) ($component['section'] ?? ''),
+                'acumulado' => $total,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'periodo' => $periodo,
+            'total' => $total,
+            'items' => $items,
+        ];
     }
 
     private function buildTemplate(): array
@@ -265,18 +312,33 @@ class EriService
             $resOperacion = $ganBruta + $totGasOp;
             $rowsByRow[257][$month] = $resOperacion;
 
-            $resAntes = $resOperacion + (float) ($rowsByRow[285][$month] ?? 0.0) + (float) ($rowsByRow[328][$month] ?? 0.0) + (float) ($rowsByRow[356][$month] ?? 0.0);
+            $resAntes = 0.0;
+            foreach (self::RESULTADO_ANTES_COMPONENTS as $component) {
+                $rowNumber = (int) ($component['row'] ?? 0);
+                $sign = (int) ($component['sign'] ?? 1);
+                $resAntes += ((float) ($rowsByRow[$rowNumber][$month] ?? 0.0)) * $sign;
+            }
             $rowsByRow[358][$month] = $resAntes;
 
-            $part = $resAntes > 0 ? -($resAntes * $tasaPart) : 0.0;
+            $part = $resAntes > 0 ? -round($resAntes * $tasaPart, 0) : 0.0;
             $rowsByRow[362][$month] = $part;
 
             $base = $resAntes + $part;
-            $ir = $base > 0 ? -($base * $tasaRenta) : 0.0;
+            $ir = $base > 0 ? -round($base * $tasaRenta, 0) : 0.0;
             $rowsByRow[364][$month] = $ir;
 
             $rowsByRow[366][$month] = $resAntes + $part + $ir;
         }
+    }
+
+    private function sumMonths(array $row): float
+    {
+        $total = 0.0;
+        foreach (self::MONTHS as $month) {
+            $total += (float) ($row[$month] ?? 0.0);
+        }
+
+        return $total;
     }
 
     private function zeroMonths(): array
