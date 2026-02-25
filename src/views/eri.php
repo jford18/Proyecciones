@@ -482,8 +482,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     });
 
     const exportEndpoint = String(compModo?.value || 'import') === 'excel'
-      ? 'api/importaciones/exportar_diferencias_excel.php'
-      : 'api/importaciones/exportar_diferencias.php';
+      ? '/api/importaciones/exportar_diferencias_excel.php'
+      : '/api/importaciones/exportar_diferencias.php';
     const url = `${exportEndpoint}?${params.toString()}`;
     const response = await fetch(url, { headers: { 'Accept': 'text/csv,application/json' } });
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -496,7 +496,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       } catch (error) {
         console.error('[COMPARATIVO][EXPORT] Respuesta inválida', { raw });
       }
-      throw new Error(payload?.message || `Error HTTP ${response.status} al exportar diferencias.`);
+      throw new Error(payload?.detail || payload?.message || `Error HTTP ${response.status} al exportar diferencias.`);
     }
 
     if (!response.ok) {
@@ -542,7 +542,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
     const onlyDiff = compOnlyDiff.checked ? '1' : '0';
     const modo = String(compModo?.value || 'import');
-    const endpoint = modo === 'excel' ? 'api/importaciones/comparativo_excel.php' : 'api/importaciones/comparativo.php';
+    const endpoint = modo === 'excel' ? '/api/importaciones/comparativo_excel.php' : '/api/importaciones/comparativo.php';
     const query = modo === 'excel'
       ? `tab=${encodeURIComponent(currentTab)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`
       : `tab=${encodeURIComponent(currentTab)}&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;

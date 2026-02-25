@@ -19,7 +19,7 @@ function comparativoBuildPdo(): PDO
 
 function comparativoFetchImportLogById(PDO $pdo, int $id): ?array
 {
-    $stmt = $pdo->prepare('SELECT ID, TAB, TIPO, ARCHIVO_NOMBRE, HOJA_NOMBRE, JSON_PATH, FECHA_CREACION FROM IMPORT_LOG WHERE ID = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT ID, TAB, TIPO, ARCHIVO_NOMBRE, HOJA_NOMBRE, SHEET_NAME, FILE_NAME, JSON_PATH, FECHA_CARGA FROM IMPORT_LOG WHERE ID = ? LIMIT 1');
     $stmt->execute([$id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -28,12 +28,18 @@ function comparativoFetchImportLogById(PDO $pdo, int $id): ?array
 
 function comparativoFetchLatestImportLog(PDO $pdo, string $tab, string $tipo): ?array
 {
-    $stmt = $pdo->prepare('SELECT ID, TAB, TIPO, ARCHIVO_NOMBRE, HOJA_NOMBRE, JSON_PATH, FECHA_CREACION
+    $stmt = $pdo->prepare('SELECT ID, TAB, TIPO, ARCHIVO_NOMBRE, HOJA_NOMBRE, SHEET_NAME, FILE_NAME, JSON_PATH, FECHA_CARGA
         FROM IMPORT_LOG
-        WHERE TAB = ? AND TIPO = ? AND JSON_PATH IS NOT NULL AND JSON_PATH <> ""
-        ORDER BY ID DESC
+        WHERE UPPER(TRIM(TAB)) = :TAB
+          AND UPPER(TRIM(TIPO)) = :TIPO
+          AND JSON_PATH IS NOT NULL
+          AND TRIM(JSON_PATH) <> ""
+        ORDER BY FECHA_CARGA DESC, ID DESC
         LIMIT 1');
-    $stmt->execute([$tab, $tipo]);
+    $stmt->execute([
+        ':TAB' => strtoupper(trim($tab)),
+        ':TIPO' => strtoupper(trim($tipo)),
+    ]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $row !== false ? $row : null;
@@ -66,15 +72,22 @@ function comparativoLoadRows(string $jsonPath): array
 
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
-        error_log('[COMPARATIVO] json_decode inválido path=' . $jsonPath . ' raw=' . substr((string) $raw, 0, 200));
         throw new RuntimeException('JSON inválido en: ' . $jsonPath);
+    }
+
+    if (array_is_list($decoded)) {
+        return $decoded;
+    }
+
+    if (isset($decoded['preview']) && is_array($decoded['preview'])) {
+        return $decoded['preview'];
     }
 
     if (isset($decoded['rows']) && is_array($decoded['rows'])) {
         return $decoded['rows'];
     }
 
-    return array_is_list($decoded) ? $decoded : [];
+    return [];
 }
 
 function comparativoNormalizeNumber(mixed $value): float
@@ -123,36 +136,32 @@ function comparativoNormalizeNumber(mixed $value): float
     return $negative ? -abs($number) : $number;
 }
 
-function comparativoIsKeyColumn(string $column): bool
+function comparativoNormalizeColumnName(string $column): string
 {
-    return in_array(strtoupper($column), ['CODIGO', 'ID_CUENTA'], true);
+    return strtoupper(trim($column));
 }
 
-function comparativoFindKey(array $row): string
+function comparativoFindKey(array $row, int $index): string
 {
-    foreach (['CODIGO', 'ID_CUENTA'] as $candidate) {
+    foreach (['ID_CUENTA', 'CODIGO'] as $candidate) {
         $value = trim((string) ($row[$candidate] ?? ''));
         if ($value !== '') {
             return $value;
         }
     }
 
-    foreach ($row as $key => $value) {
-        if (in_array(strtoupper((string) $key), ['__ROW', 'ROWNUM', 'WARNINGS', 'WARNING', '_META'], true)) {
-            continue;
-        }
-        $text = trim((string) $value);
-        if ($text !== '') {
-            return $text;
-        }
+    $nivel = trim((string) ($row['NIVEL'] ?? ''));
+    $nombre = trim((string) ($row['NOMBRE_CUENTA'] ?? $row['DESCRIPCION'] ?? $row['NOMBRE'] ?? $row['CUENTA'] ?? ''));
+    if ($nivel !== '' || $nombre !== '') {
+        return trim($nivel . '|' . $nombre, '|');
     }
 
-    return '__EMPTY__' . md5((string) json_encode($row, JSON_UNESCAPED_UNICODE));
+    return '__ROW__' . $index;
 }
 
 function comparativoFindDescription(array $row): string
 {
-    foreach (['DESCRIPCION', 'NOMBRE_CUENTA', 'CUENTA'] as $field) {
+    foreach (['NOMBRE_CUENTA', 'DESCRIPCION', 'NOMBRE', 'CUENTA'] as $field) {
         $value = trim((string) ($row[$field] ?? ''));
         if ($value !== '') {
             return $value;
@@ -165,19 +174,24 @@ function comparativoFindDescription(array $row): string
 function comparativoCollectNumericColumns(array $rowsA, array $rowsB): array
 {
     $columns = [];
+    $ignored = [
+        'ID_CUENTA', 'CODIGO', 'CUENTA_ID', 'COD', 'DESCRIPCION', 'NOMBRE_CUENTA', 'CUENTA', 'NOMBRE',
+        'TIPO', 'ANIO', 'PERIODO', 'TAB', 'NIVEL', '__ROW', 'ROWNUM', 'WARNINGS', 'WARNING', '_META',
+    ];
 
     foreach ([$rowsA, $rowsB] as $rows) {
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
             }
+
             foreach ($row as $column => $value) {
-                $name = strtoupper((string) $column);
-                if ($name === '' || comparativoIsKeyColumn($name) || in_array($name, ['DESCRIPCION', 'NOMBRE_CUENTA', 'CUENTA', 'TIPO', 'ANIO', 'PERIODO', '__ROW', 'ROWNUM', 'WARNINGS', 'WARNING', '_META'], true)) {
+                $name = comparativoNormalizeColumnName((string) $column);
+                if ($name === '' || in_array($name, $ignored, true)) {
                     continue;
                 }
 
-                if (is_numeric($value) || preg_match('/[\d]/', (string) $value) === 1 || in_array($name, ['TOTAL', 'TOTAL_RECALCULADO'], true)) {
+                if (is_numeric($value) || preg_match('/[-(]?\d+[\d\s,.)-]*/', (string) $value) === 1) {
                     $columns[$name] = true;
                 }
             }
@@ -187,14 +201,31 @@ function comparativoCollectNumericColumns(array $rowsA, array $rowsB): array
     return array_values(array_keys($columns));
 }
 
-function comparativoIndexRows(array $rows): array
+function comparativoNormalizeRowByColumns(array $row, array $numericColumns): array
+{
+    $normalized = [];
+    foreach ($numericColumns as $column) {
+        $normalized[$column] = comparativoNormalizeNumber($row[$column] ?? 0);
+    }
+
+    return $normalized;
+}
+
+function comparativoIndexRows(array $rows, array $numericColumns): array
 {
     $indexed = [];
-    foreach ($rows as $row) {
+    foreach ($rows as $index => $row) {
         if (!is_array($row)) {
             continue;
         }
-        $indexed[comparativoFindKey($row)] = $row;
+
+        $key = comparativoFindKey($row, (int) $index);
+        $indexed[$key] = [
+            'id_cuenta' => trim((string) ($row['ID_CUENTA'] ?? '')),
+            'codigo' => trim((string) ($row['CODIGO'] ?? '')),
+            'nombre_cuenta' => comparativoFindDescription($row),
+            'numeric' => comparativoNormalizeRowByColumns($row, $numericColumns),
+        ];
     }
 
     return $indexed;
@@ -210,7 +241,7 @@ function comparativoBuild(array $params): array
     $idB = (int) ($params['import_log_id_b'] ?? ($params['log_id_b'] ?? 0));
 
     if ($tab === '' || $tipoA === '' || $tipoB === '') {
-        throw new RuntimeException('Parámetros inválidos: tab, tipo_a y tipo_b son obligatorios.');
+        throw new InvalidArgumentException('Parámetros inválidos: tab, tipo_a y tipo_b son obligatorios.');
     }
 
     $pdo = comparativoBuildPdo();
@@ -218,65 +249,109 @@ function comparativoBuild(array $params): array
     $logB = $idB > 0 ? comparativoFetchImportLogById($pdo, $idB) : comparativoFetchLatestImportLog($pdo, $tab, $tipoB);
 
     if ($logA === null) {
-        throw new RuntimeException('No se encontró importación A para TAB=' . strtoupper($tab) . ' TIPO=' . $tipoA);
+        throw new RuntimeException('No se encontró importación A para TAB=' . $tab . ' TIPO=' . $tipoA . '. Sugerencia: importa un archivo ' . $tipoA . ' en la pestaña ' . $tab . '.');
     }
     if ($logB === null) {
-        throw new RuntimeException('No se encontró importación B para TAB=' . strtoupper($tab) . ' TIPO=' . $tipoB);
+        throw new RuntimeException('No se encontró importación B para TAB=' . $tab . ' TIPO=' . $tipoB . '. Sugerencia: importa un archivo ' . $tipoB . ' en la pestaña ' . $tab . '.');
     }
-
-    $idA = (int) ($logA['ID'] ?? 0);
-    $idB = (int) ($logB['ID'] ?? 0);
-    error_log(sprintf('[COMPARATIVO] tab=%s tipo_a=%s tipo_b=%s idA=%d idB=%d', strtoupper($tab), $tipoA, $tipoB, $idA, $idB));
 
     $rowsA = comparativoLoadRows((string) ($logA['JSON_PATH'] ?? ''));
     $rowsB = comparativoLoadRows((string) ($logB['JSON_PATH'] ?? ''));
 
-    $indexedA = comparativoIndexRows($rowsA);
-    $indexedB = comparativoIndexRows($rowsB);
-    $allKeys = array_values(array_unique(array_merge(array_keys($indexedA), array_keys($indexedB))));
     $numericColumns = comparativoCollectNumericColumns($rowsA, $rowsB);
+    $indexedA = comparativoIndexRows($rowsA, $numericColumns);
+    $indexedB = comparativoIndexRows($rowsB, $numericColumns);
+    $allKeys = array_values(array_unique(array_merge(array_keys($indexedA), array_keys($indexedB))));
 
-    $differences = [];
+    $rows = [];
+    $flatDifferences = [];
+    $diffRows = 0;
+
     foreach ($allKeys as $key) {
-        $rowA = $indexedA[$key] ?? [];
-        $rowB = $indexedB[$key] ?? [];
-        $description = comparativoFindDescription($rowA) ?: comparativoFindDescription($rowB);
+        $rowA = $indexedA[$key] ?? null;
+        $rowB = $indexedB[$key] ?? null;
+        $valsA = $rowA['numeric'] ?? array_fill_keys($numericColumns, 0.0);
+        $valsB = $rowB['numeric'] ?? array_fill_keys($numericColumns, 0.0);
+
+        $rowOut = [
+            'id_cuenta' => $rowA['id_cuenta'] ?? $rowB['id_cuenta'] ?? '',
+            'codigo' => $rowA['codigo'] ?? $rowB['codigo'] ?? '',
+            'cuenta' => $key,
+            'nombre_cuenta' => $rowA['nombre_cuenta'] ?? $rowB['nombre_cuenta'] ?? '',
+            'has_diff' => false,
+        ];
 
         foreach ($numericColumns as $column) {
-            $valueA = comparativoNormalizeNumber($rowA[$column] ?? 0);
-            $valueB = comparativoNormalizeNumber($rowB[$column] ?? 0);
-            $delta = $valueA - $valueB;
+            $valueA = (float) ($valsA[$column] ?? 0.0);
+            $valueB = (float) ($valsB[$column] ?? 0.0);
+            $delta = $valueB - $valueA;
 
-            if ($onlyDiff && abs($delta) < 0.000001) {
-                continue;
-            }
+            $rowOut[$column . '_A'] = $valueA;
+            $rowOut[$column . '_B'] = $valueB;
+            $rowOut[$column . '_DELTA'] = $delta;
 
-            $differences[] = [
+            $flatDifferences[] = [
                 'CLAVE' => $key,
-                'DESCRIPCION' => $description,
+                'DESCRIPCION' => $rowOut['nombre_cuenta'],
                 'CAMPO' => $column,
                 'VALOR_A' => $valueA,
                 'VALOR_B' => $valueB,
                 'DELTA' => $delta,
             ];
+
+            if (abs($delta) > 0.000001) {
+                $rowOut['has_diff'] = true;
+            }
         }
+
+        if ($onlyDiff && !$rowOut['has_diff']) {
+            continue;
+        }
+
+        if ($rowOut['has_diff']) {
+            $diffRows++;
+        }
+
+        $rows[] = $rowOut;
     }
 
-    $conDiferencias = count(array_filter($differences, static fn(array $row): bool => abs((float) ($row['DELTA'] ?? 0)) > 0.000001));
+    if ($onlyDiff) {
+        $flatDifferences = array_values(array_filter($flatDifferences, static fn(array $r): bool => abs((float) ($r['DELTA'] ?? 0.0)) > 0.000001));
+    }
 
     return [
         'ok' => true,
+        'tab' => $tab,
+        'tipo_a' => $tipoA,
+        'tipo_b' => $tipoB,
+        'solo_diferencias' => $onlyDiff,
+        'columns' => $numericColumns,
+        'rows' => $rows,
         'meta' => [
-            'tab' => strtoupper($tab),
-            'tipo_a' => $tipoA,
-            'tipo_b' => $tipoB,
-            'import_log_id_a' => $idA,
-            'import_log_id_b' => $idB,
+            'total' => count($rows),
+            'diferencias' => $diffRows,
+            'import_a' => [
+                'id' => (int) ($logA['ID'] ?? 0),
+                'tab' => (string) ($logA['TAB'] ?? ''),
+                'tipo' => (string) ($logA['TIPO'] ?? ''),
+                'json_path' => (string) ($logA['JSON_PATH'] ?? ''),
+                'fecha_carga' => (string) ($logA['FECHA_CARGA'] ?? ''),
+            ],
+            'import_b' => [
+                'id' => (int) ($logB['ID'] ?? 0),
+                'tab' => (string) ($logB['TAB'] ?? ''),
+                'tipo' => (string) ($logB['TIPO'] ?? ''),
+                'json_path' => (string) ($logB['JSON_PATH'] ?? ''),
+                'fecha_carga' => (string) ($logB['FECHA_CARGA'] ?? ''),
+            ],
+            'import_log_id_a' => (int) ($logA['ID'] ?? 0),
+            'import_log_id_b' => (int) ($logB['ID'] ?? 0),
         ],
+        // Compatibilidad con UI actual.
         'resumen' => [
             'total_claves' => count($allKeys),
-            'con_diferencias' => $conDiferencias,
+            'con_diferencias' => $diffRows,
         ],
-        'diferencias' => $differences,
+        'diferencias' => $flatDifferences,
     ];
 }

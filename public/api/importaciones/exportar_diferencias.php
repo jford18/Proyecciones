@@ -16,7 +16,7 @@ set_error_handler(static function (int $severity, string $message, string $file 
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
-function exportRespondJsonError(array $payload, int $status = 500): never
+function exportRespondJsonError(array $payload, int $status = 200): never
 {
     if (ob_get_length()) {
         ob_clean();
@@ -82,5 +82,5 @@ try {
         'message' => 'No fue posible exportar diferencias.',
         'detail' => $e->getMessage(),
         'trace_id' => $traceId,
-    ], 500);
+    ], 200);
 }
