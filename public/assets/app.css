@@ -30,3 +30,7 @@ body { background: #f3f6fb; }
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; height: auto; position: static; }
 }
+
+.eri-comp-cell-diff { background: #fff3cd !important; }
+.eri-comp-row-new-a td { background: #e8f7ee !important; }
+.eri-comp-row-missing-a td { background: #fdeaea !important; }

@@ -18,9 +18,10 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <label class="form-label">% Impuesto renta</label>
         <input id="eri-renta" class="form-control" type="number" min="0" step="0.01" value="25">
       </div>
-      <div class="col-md-4 d-flex gap-2">
+      <div class="col-md-6 d-flex gap-2 flex-wrap">
         <button id="eri-recalcular" class="btn btn-primary">Recalcular</button>
         <a id="eri-exportar" class="btn btn-outline-success" href="#" target="_blank" rel="noopener">Exportar Excel</a>
+        <button id="eri-comparativo-open" class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#eriComparativoModal">COMPARATIVO</button>
       </div>
     </div>
 
@@ -38,6 +39,52 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         </thead>
         <tbody id="eri-tbody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="eriComparativoModal" tabindex="-1" aria-labelledby="eriComparativoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eriComparativoModalLabel">Comparativo de importaciones</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="eri-comparativo-alert" class="mb-2"></div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-md-3">
+            <label class="form-label">Tipo A</label>
+            <input id="eri-comp-tipo-a" class="form-control" value="REAL">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Tipo B</label>
+            <input id="eri-comp-tipo-b" class="form-control" value="PRESUPUESTO">
+          </div>
+          <div class="col-md-3 form-check mt-4 pt-2">
+            <input id="eri-comp-only-diff" class="form-check-input" type="checkbox" checked>
+            <label class="form-check-label" for="eri-comp-only-diff">Solo diferencias</label>
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button id="eri-comp-compare" type="button" class="btn btn-primary">Comparar</button>
+            <button id="eri-comp-export-csv" type="button" class="btn btn-outline-success">Exportar diferencias</button>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 mb-3 flex-wrap">
+          <a id="eri-comp-view-a" class="btn btn-sm btn-outline-primary disabled" href="#" target="_blank" rel="noopener">Ver como Excel (A)</a>
+          <a id="eri-comp-view-b" class="btn btn-sm btn-outline-primary disabled" href="#" target="_blank" rel="noopener">Ver como Excel (B)</a>
+        </div>
+
+        <div id="eri-comp-resumen" class="row g-2 mb-3"></div>
+
+        <div class="table-responsive" style="max-height: 60vh; overflow:auto;">
+          <table class="table table-sm table-bordered align-middle" id="eri-comp-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -63,8 +110,21 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const exportLink = document.getElementById('eri-exportar');
   const drawerBody = document.getElementById('eri-origen-body');
   const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
+  const compAlert = document.getElementById('eri-comparativo-alert');
+  const compTipoA = document.getElementById('eri-comp-tipo-a');
+  const compTipoB = document.getElementById('eri-comp-tipo-b');
+  const compOnlyDiff = document.getElementById('eri-comp-only-diff');
+  const compCompareBtn = document.getElementById('eri-comp-compare');
+  const compExportCsvBtn = document.getElementById('eri-comp-export-csv');
+  const compViewA = document.getElementById('eri-comp-view-a');
+  const compViewB = document.getElementById('eri-comp-view-b');
+  const compResumen = document.getElementById('eri-comp-resumen');
+  const compTable = document.getElementById('eri-comp-table');
+  const compTableHead = compTable ? compTable.querySelector('thead') : null;
+  const compTableBody = compTable ? compTable.querySelector('tbody') : null;
   const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   let currentRows = [];
+  let currentComparativo = null;
 
   const fmt = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
@@ -333,6 +393,122 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     });
   });
 
+
+  const renderComparativoSummary = (resumen = {}) => {
+    const cards = [
+      ['Iguales', resumen.iguales ?? 0],
+      ['Cambios', resumen.cambios ?? 0],
+      ['Nuevo en A', resumen.nuevo_en_a ?? 0],
+      ['Falta en A', resumen.falta_en_a ?? 0],
+      ['Total A', resumen.total_a ?? 0],
+      ['Total B', resumen.total_b ?? 0],
+      ['Resultado', resumen.total_resultado ?? 0],
+    ];
+    compResumen.innerHTML = cards.map(([label, value]) => `
+      <div class="col-md-2 col-sm-4 col-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body p-2 text-center">
+            <div class="small text-muted">${escapeHtml(label)}</div>
+            <div class="fw-bold">${escapeHtml(value)}</div>
+          </div>
+        </div>
+      </div>`).join('');
+  };
+
+  const setViewExcelLinks = (payload) => {
+    const tab = String(payload?.tab || 'ingresos').toLowerCase();
+    const tipoA = payload?.tipo_a || 'REAL';
+    const tipoB = payload?.tipo_b || 'PRESUPUESTO';
+    const hrefA = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoA)}`;
+    const hrefB = `?r=import-excel&action=view-excel&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipoB)}`;
+
+    if (payload?.log_a?.id) {
+      compViewA.href = hrefA;
+      compViewA.classList.remove('disabled');
+    }
+    if (payload?.log_b?.id) {
+      compViewB.href = hrefB;
+      compViewB.classList.remove('disabled');
+    }
+  };
+
+  const renderComparativoTable = (payload) => {
+    const columns = Array.isArray(payload?.columnas) ? payload.columnas : [];
+    const filas = Array.isArray(payload?.filas) ? payload.filas : [];
+    if (!compTableHead || !compTableBody) return;
+
+    compTableHead.innerHTML = `<tr><th>ESTADO</th><th>KEY</th>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
+    compTableBody.innerHTML = filas.map((row) => {
+      const diff = Array.isArray(row.columnas_diferentes) ? row.columnas_diferentes : [];
+      const rowClass = row.estado === 'NUEVO_EN_A'
+        ? 'eri-comp-row-new-a'
+        : (row.estado === 'FALTA_EN_A' ? 'eri-comp-row-missing-a' : '');
+      return `<tr class="${rowClass}">
+        <td class="fw-bold">${escapeHtml(row.estado || '')}</td>
+        <td>${escapeHtml(row.key || '')}</td>
+        ${columns.map((col) => {
+          const valA = row?.a?.[col] ?? '';
+          const valB = row?.b?.[col] ?? '';
+          const isDiff = row.estado === 'CAMBIO' && diff.includes(col);
+          const cellClass = isDiff ? 'eri-comp-cell-diff' : '';
+          return `<td class="${cellClass}"><div class="small text-muted">A: ${escapeHtml(valA)}</div><div>B: ${escapeHtml(valB)}</div></td>`;
+        }).join('')}
+      </tr>`;
+    }).join('') || '<tr><td colspan="999" class="text-muted">Sin datos para mostrar.</td></tr>';
+  };
+
+  const toCsvCell = (value) => {
+    const raw = String(value ?? '');
+    return `"${raw.replaceAll('"', '""')}"`;
+  };
+
+  const exportComparativoCsv = () => {
+    if (!currentComparativo || !Array.isArray(currentComparativo.filas)) {
+      alert('No hay comparativo para exportar.');
+      return;
+    }
+    const columns = Array.isArray(currentComparativo.columnas) ? currentComparativo.columnas : [];
+    const headers = ['ESTADO', 'KEY', ...columns.flatMap((col) => [`${col}_A`, `${col}_B`])];
+    const lines = [headers.map(toCsvCell).join(',')];
+
+    currentComparativo.filas.forEach((row) => {
+      const values = [row.estado || '', row.key || ''];
+      columns.forEach((col) => {
+        values.push(row?.a?.[col] ?? '');
+        values.push(row?.b?.[col] ?? '');
+      });
+      lines.push(values.map(toCsvCell).join(','));
+    });
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `comparativo_${currentComparativo.tab || 'tab'}_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const runComparativo = async () => {
+    compAlert.innerHTML = '';
+    const tipoA = String(compTipoA.value || 'REAL').trim().toUpperCase();
+    const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
+    const onlyDiff = compOnlyDiff.checked ? '1' : '0';
+    const url = `api/importaciones/comparativo.php?tab=ERI&tipo_a=${encodeURIComponent(tipoA)}&tipo_b=${encodeURIComponent(tipoB)}&solo_diferencias=${onlyDiff}`;
+    const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || `Error HTTP ${response.status}`);
+    }
+
+    currentComparativo = data;
+    renderComparativoSummary(data.resumen || {});
+    renderComparativoTable(data);
+    setViewExcelLinks(data);
+  };
+
   const load = async () => {
     const response = await fetch(buildUrl('json'));
     const data = await response.json();
@@ -358,6 +534,21 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       renderRows(currentRows);
     });
   });
+
+  if (compCompareBtn) {
+    compCompareBtn.addEventListener('click', () => runComparativo().catch((e) => {
+      compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+    }));
+  }
+  if (compOnlyDiff) {
+    compOnlyDiff.addEventListener('change', () => runComparativo().catch((e) => {
+      compAlert.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(e.message)}</div>`;
+    }));
+  }
+  if (compExportCsvBtn) {
+    compExportCsvBtn.addEventListener('click', exportComparativoCsv);
+  }
+
   load().catch((e) => alert(e.message));
 })();
 </script>
