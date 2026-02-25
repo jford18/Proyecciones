@@ -96,7 +96,7 @@ class ExcelImportController
         ], 404);
     }
 
-    public function viewExcelPage(string $tab, string $tipo, ?int $anio): array
+    public function viewExcelPage(string $tab, string $tipo, ?int $anio, ?int $importLogId = null): array
     {
         if ($this->presupuestoIngresosRepository === null) {
             return ['error' => 'Repositorio no disponible.', 'tab' => $tab, 'tipo' => $tipo, 'anio' => $anio, 'headers' => [], 'rows' => []];
@@ -104,7 +104,9 @@ class ExcelImportController
 
         $tab = strtolower(trim($tab));
         $tipo = trim($tipo);
-        $log = $this->presupuestoIngresosRepository->findLatestImportLogByTabTipo($tab, $tipo);
+        $log = $importLogId !== null && $importLogId > 0
+            ? $this->presupuestoIngresosRepository->findImportLogById($importLogId)
+            : $this->presupuestoIngresosRepository->findLatestImportLogByTabTipo($tab, $tipo);
         if ($log === null) {
             return [
                 'tab' => $tab,
@@ -206,7 +208,8 @@ class ExcelImportController
         $tab = (string) ($_GET['tab'] ?? 'ingresos');
         $tipo = (string) ($_GET['tipo'] ?? 'PRESUPUESTO');
         $anio = isset($_GET['anio']) ? (int) $_GET['anio'] : null;
-        $excelView = $this->viewExcelPage($tab, $tipo, $anio);
+        $importLogId = isset($_GET['import_log_id']) ? (int) $_GET['import_log_id'] : null;
+        $excelView = $this->viewExcelPage($tab, $tipo, $anio, $importLogId);
         if (($excelView['headers'] ?? []) === [] && ($excelView['rows'] ?? []) === [] && trim((string) ($excelView['message'] ?? '')) === '') {
             $excelView['message'] = 'No hay datos para mostrar';
         }
