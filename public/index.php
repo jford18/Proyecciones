@@ -66,6 +66,10 @@ $firstProjectId = isset($projectOptions[0]['ID']) ? (int) $projectOptions[0]['ID
 $activeProjectId = (int) ($_SESSION['active_project_id'] ?? $firstProjectId);
 $activeTipo = in_array(($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO'), ['PRESUPUESTO', 'REAL'], true) ? (string) ($_GET['tipo'] ?? $_SESSION['active_tipo'] ?? 'PRESUPUESTO') : 'PRESUPUESTO';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
+$path = rtrim($path, '/');
+if ($path === '') {
+    $path = '/';
+}
 function sendJsonResponse(array $payload, int $status = 200): never {
     header('Content-Type: application/json; charset=utf-8');
     http_response_code($status);
@@ -107,6 +111,16 @@ function handleImportApi(ExcelImportController $excelImportController, string $e
 
 if (str_starts_with($path, '/import/')) {
     handleImportApi($excelImportController, basename($path));
+}
+
+if ($path === '/api/eri-real') {
+    require __DIR__ . '/api/eri-real/index.php';
+    exit;
+}
+
+if ($path === '/api/eri-real/upsert' && (string) ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    require __DIR__ . '/api/eri-real/upsert_handler.php';
+    exit;
 }
 
 $route = (string) ($_GET['r'] ?? 'dashboard');

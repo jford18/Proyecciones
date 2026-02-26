@@ -27,7 +27,7 @@ if ($contentType === '' || stripos($contentType, 'application/json') !== 0) {
 $raw = file_get_contents('php://input');
 $payload = json_decode($raw ?: '', true);
 if (!is_array($payload)) {
-    upsertError('JSON inválido.', 422);
+    upsertError('JSON inválido.', 400);
 }
 
 $periodoMes = filter_var($payload['periodo_mes'] ?? null, FILTER_VALIDATE_INT);
@@ -37,21 +37,24 @@ $descripcion = trim((string) ($payload['descripcion'] ?? ''));
 $valorRaw = $payload['valor_real'] ?? null;
 
 if ($periodoMes === false || $periodoMes === null || !preg_match('/^\d{6}$/', (string) $periodoMes)) {
-    upsertError('periodo_mes es requerido con formato YYYYMM.', 422);
+    upsertError('periodo_mes es requerido con formato YYYYMM.', 400);
 }
 
 if ($mes === false || $mes === null || $mes < 1 || $mes > 12) {
-    upsertError('mes debe estar entre 1 y 12.', 422);
+    upsertError('mes debe estar entre 1 y 12.', 400);
 }
 
 if ($codigo === '') {
-    upsertError('codigo es requerido.', 422);
+    upsertError('codigo es requerido.', 400);
 }
 
 $valorReal = null;
 if ($valorRaw !== null && $valorRaw !== '') {
+    if (is_string($valorRaw)) {
+        $valorRaw = str_replace(',', '.', trim($valorRaw));
+    }
     if (!is_numeric($valorRaw)) {
-        upsertError('valor_real debe ser numérico o null.', 422);
+        upsertError('valor_real debe ser numérico o null.', 400);
     }
     $valorReal = (float) $valorRaw;
 }
