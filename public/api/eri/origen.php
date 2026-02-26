@@ -6,6 +6,146 @@ use App\db\Db;
 
 require __DIR__ . '/../../../vendor/autoload.php';
 
+function jsonResponse(array $payload, int $status = 200): never
+{
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function normalizeRealValue(mixed $raw): ?float
+{
+    if ($raw === null || $raw === '') {
+        return null;
+    }
+
+    if (is_int($raw) || is_float($raw)) {
+        return (float) $raw;
+    }
+
+    if (!is_string($raw)) {
+        throw new InvalidArgumentException('valor_real debe ser numérico, texto numérico o null.');
+    }
+
+    $text = trim($raw);
+    if ($text === '') {
+        return null;
+    }
+
+    $text = str_replace([' ', "\t", "\n", "\r"], '', $text);
+    $hasComma = str_contains($text, ',');
+    $hasDot = str_contains($text, '.');
+
+    if ($hasComma && $hasDot) {
+        if (strrpos($text, ',') > strrpos($text, '.')) {
+            $text = str_replace('.', '', $text);
+            $text = str_replace(',', '.', $text);
+        } else {
+            $text = str_replace(',', '', $text);
+        }
+    } elseif ($hasComma) {
+        $text = str_replace('.', '', $text);
+        $text = str_replace(',', '.', $text);
+    } else {
+        $parts = explode('.', $text);
+        if (count($parts) > 2) {
+            $decimal = array_pop($parts);
+            $text = implode('', $parts) . '.' . $decimal;
+        }
+    }
+
+    if (!is_numeric($text)) {
+        throw new InvalidArgumentException('valor_real debe ser numérico, texto numérico o null.');
+    }
+
+    return (float) $text;
+}
+
+function handleEriReal(PDO $pdo): never
+{
+    $op = strtoupper(trim((string) ($_GET['op'] ?? '')));
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+
+    if ($op === 'LIST') {
+        $periodoMes = filter_input(INPUT_GET, 'periodo_mes', FILTER_VALIDATE_INT);
+        if ($periodoMes === false || $periodoMes === null || !preg_match('/^\d{6}$/', (string) $periodoMes)) {
+            jsonResponse(['ok' => false, 'error' => 'periodo_mes es requerido con formato YYYYMM.'], 422);
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT CODIGO AS codigo, MES AS mes, VALOR_REAL AS valor_real
+             FROM ERI_REAL_VALOR
+             WHERE PERIODO_MES = :periodo_mes
+             ORDER BY CODIGO, MES'
+        );
+        $stmt->execute(['periodo_mes' => $periodoMes]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        jsonResponse(['ok' => true, 'data' => array_map(static function (array $row): array {
+            return [
+                'codigo' => (string) ($row['codigo'] ?? ''),
+                'mes' => (int) ($row['mes'] ?? 0),
+                'valor_real' => $row['valor_real'] === null ? null : (float) $row['valor_real'],
+            ];
+        }, $rows)]);
+    }
+
+    if ($op === 'UPSERT') {
+        if ($method !== 'POST') {
+            jsonResponse(['ok' => false, 'error' => 'Método no permitido.'], 405);
+        }
+
+        $rawBody = file_get_contents('php://input');
+        $payload = json_decode($rawBody ?: '', true);
+        if (!is_array($payload)) {
+            jsonResponse(['ok' => false, 'error' => 'JSON inválido.'], 400);
+        }
+
+        $periodoMes = filter_var($payload['periodo_mes'] ?? null, FILTER_VALIDATE_INT);
+        $mes = filter_var($payload['mes'] ?? null, FILTER_VALIDATE_INT);
+        $codigo = trim((string) ($payload['codigo'] ?? ''));
+        $descripcion = trim((string) ($payload['descripcion'] ?? ''));
+
+        if ($periodoMes === false || $periodoMes === null || !preg_match('/^\d{6}$/', (string) $periodoMes)) {
+            jsonResponse(['ok' => false, 'error' => 'periodo_mes es requerido con formato YYYYMM.'], 422);
+        }
+        if ($codigo === '') {
+            jsonResponse(['ok' => false, 'error' => 'codigo es requerido.'], 422);
+        }
+        if ($mes === false || $mes === null || $mes < 1 || $mes > 12) {
+            jsonResponse(['ok' => false, 'error' => 'mes debe estar entre 1 y 12.'], 422);
+        }
+
+        try {
+            $valorReal = normalizeRealValue($payload['valor_real'] ?? null);
+        } catch (InvalidArgumentException $e) {
+            jsonResponse(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+
+        $sql = 'INSERT INTO ERI_REAL_VALOR (PERIODO_MES, MES, CODIGO, DESCRIPCION, VALOR_REAL)
+                VALUES (:periodo_mes, :mes, :codigo, :descripcion, :valor_real)
+                ON DUPLICATE KEY UPDATE
+                  DESCRIPCION = VALUES(DESCRIPCION),
+                  VALOR_REAL = VALUES(VALOR_REAL)';
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':periodo_mes', (int) $periodoMes, PDO::PARAM_INT);
+        $stmt->bindValue(':mes', (int) $mes, PDO::PARAM_INT);
+        $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
+        $stmt->bindValue(':descripcion', $descripcion, PDO::PARAM_STR);
+        if ($valorReal === null) {
+            $stmt->bindValue(':valor_real', null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':valor_real', $valorReal);
+        }
+        $stmt->execute();
+
+        jsonResponse(['ok' => true]);
+    }
+
+    jsonResponse(['ok' => false, 'error' => 'Operación ERI_REAL no soportada.'], 400);
+}
+
 function resolverTabOrigen(string $codigo): string
 {
     $prefijo = substr($codigo, 0, 1);
@@ -67,6 +207,15 @@ function toFloat(mixed $value): float
 
 $config = require __DIR__ . '/../../../src/config/config.php';
 $pdo = Db::pdo($config);
+
+$mod = strtoupper(trim((string) ($_GET['mod'] ?? '')));
+if ($mod === 'ERI_REAL') {
+    try {
+        handleEriReal($pdo);
+    } catch (Throwable $e) {
+        jsonResponse(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
+}
 
 $anio = (int) ($_GET['anio'] ?? date('Y'));
 $codigo = trim((string) ($_GET['codigo'] ?? ''));
