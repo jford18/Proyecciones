@@ -23,6 +23,14 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <a id="eri-exportar" class="btn btn-outline-success" href="#" target="_blank" rel="noopener">Exportar Excel</a>
         <button id="eri-comparativo-open" class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#eriComparativoModal">COMPARATIVO</button>
       </div>
+      <div class="col-md-3">
+        <label class="form-label" for="eri-real-size">Tamaño campo REAL</label>
+        <select id="eri-real-size" class="form-select">
+          <option value="small">Pequeño</option>
+          <option value="normal" selected>Normal</option>
+          <option value="large">Grande</option>
+        </select>
+      </div>
     </div>
 
     <div class="table-sticky eri-table-wrap">
@@ -146,6 +154,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const partInput = document.getElementById('eri-participacion');
   const rentaInput = document.getElementById('eri-renta');
   const exportLink = document.getElementById('eri-exportar');
+  const realSizeControl = document.getElementById('eri-real-size');
   const drawerBody = document.getElementById('eri-origen-body');
   const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
   const compAlert = document.getElementById('eri-comparativo-alert');
@@ -177,6 +186,17 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   let currentComparativo = null;
   let currentMeta = null;
   let currentExcelTmpFile = '';
+
+  const applyRealInputSize = (size) => {
+    const allowedSizes = ['small', 'normal', 'large'];
+    const safeSize = allowedSizes.includes(size) ? size : 'normal';
+    const wrap = document.querySelector('.eri-table-wrap');
+    if (!wrap) return;
+    wrap.classList.remove('eri-real-size-small', 'eri-real-size-normal', 'eri-real-size-large');
+    wrap.classList.add(`eri-real-size-${safeSize}`);
+    if (realSizeControl) realSizeControl.value = safeSize;
+    window.localStorage.setItem('eri-real-size', safeSize);
+  };
 
   const fmt = (value) => {
     const rounded = Math.round(Number(value || 0));
@@ -600,6 +620,18 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     input.blur();
   });
 
+  tbody.addEventListener('focusin', (event) => {
+    const input = event.target.closest('.eri-real-input');
+    if (!input) return;
+    input.select();
+  });
+
+  tbody.addEventListener('click', (event) => {
+    const input = event.target.closest('.eri-real-input');
+    if (!input) return;
+    input.select();
+  });
+
   tbody.addEventListener('blur', (event) => {
     const input = event.target.closest('.eri-real-input');
     if (!input) return;
@@ -869,6 +901,11 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
 
   document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
+  if (realSizeControl) {
+    realSizeControl.addEventListener('change', () => {
+      applyRealInputSize(realSizeControl.value);
+    });
+  }
   [partInput, rentaInput].forEach((input) => {
     input.addEventListener('input', () => {
       if (!Array.isArray(currentRows) || currentRows.length === 0) return;
@@ -905,6 +942,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   }
 
   updateModoUi();
+  applyRealInputSize(window.localStorage.getItem('eri-real-size') || 'normal');
   load().catch((e) => alert(e.message));
 })();
 </script>
