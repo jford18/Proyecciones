@@ -26,6 +26,15 @@ body { background: #f3f6fb; }
 .eri-table thead .eri-sticky-pct { z-index: 3; background: #0f172a; }
 .eri-cell-trace:hover .eri-trace-icon { opacity: 1; }
 
+.eri-cell-value-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; }
+.eri-real-wrap { display: inline-flex; align-items: center; gap: 0.25rem; }
+.eri-real-label { font-size: 0.65rem; color: #64748b; margin: 0; }
+.eri-real-input { width: 92px; min-width: 80px; max-width: 110px; text-align: right; border-color: #cbd5e1; }
+.eri-real-status { width: 12px; display: inline-block; text-align: center; font-size: 0.7rem; line-height: 1; }
+.eri-real-status-saving { color: #64748b; }
+.eri-real-status-saved { color: #16a34a; }
+.eri-real-status-error { color: #dc2626; }
+
 @media (max-width: 992px) {
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; height: auto; position: static; }

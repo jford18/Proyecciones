@@ -172,6 +172,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const desgloseModal = new bootstrap.Modal('#eriDesgloseModal');
   const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   let currentRows = [];
+  let realValues = {};
+  let realSaveState = {};
   let currentComparativo = null;
   let currentMeta = null;
   let currentExcelTmpFile = '';
@@ -183,6 +185,69 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
   const round0 = (value) => Math.round(Number(value || 0));
+  const getPeriodoMes = () => Number(`${yearInput.value || new Date().getFullYear()}01`);
+
+  const cellKey = (codigo, mes) => `${String(codigo || '').trim()}|${Number(mes || 0)}`;
+
+  const setCellStatus = (codigo, mes, status) => {
+    const key = cellKey(codigo, mes);
+    realSaveState[key] = status;
+    const indicator = document.querySelector(`.eri-real-status[data-key="${CSS.escape(key)}"]`);
+    if (!indicator) return;
+    indicator.className = `eri-real-status eri-real-status-${status || 'idle'}`;
+    indicator.textContent = status === 'saved' ? '✓' : (status === 'error' ? '⚠' : (status === 'saving' ? '…' : ''));
+    indicator.title = status === 'saved'
+      ? 'Guardado'
+      : (status === 'error' ? 'Error al guardar' : (status === 'saving' ? 'Guardando...' : ''));
+  };
+
+  const saveRealValue = async ({ codigo, descripcion, mes, valorReal }) => {
+    const key = cellKey(codigo, mes);
+    setCellStatus(codigo, mes, 'saving');
+    try {
+      const response = await fetch('/api/eri-real/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          periodo_mes: getPeriodoMes(),
+          codigo,
+          descripcion,
+          mes,
+          valor_real: valorReal,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.message || `Error HTTP ${response.status}`);
+      }
+      realSaveState[key] = 'saved';
+      setCellStatus(codigo, mes, 'saved');
+    } catch (error) {
+      realSaveState[key] = 'error';
+      setCellStatus(codigo, mes, 'error');
+    }
+  };
+
+  const loadRealValues = async () => {
+    const response = await fetch(`/api/eri-real?periodo_mes=${encodeURIComponent(getPeriodoMes())}`, {
+      headers: { Accept: 'application/json' },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.message || `Error HTTP ${response.status}`);
+    }
+
+    realValues = {};
+    realSaveState = {};
+    (payload.data || []).forEach((item) => {
+      const codigo = String(item.codigo || '').trim();
+      const mes = Number(item.mes || 0);
+      if (!codigo || mes < 1 || mes > 12) return;
+      if (!realValues[codigo]) realValues[codigo] = {};
+      realValues[codigo][mes] = item.valor_real == null ? '' : String(item.valor_real);
+      realSaveState[cellKey(codigo, mes)] = 'saved';
+    });
+  };
 
   const parseNumberSafe = (value) => {
     if (value == null) return 0;
@@ -436,17 +501,39 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       tr.appendChild(tdDesc);
 
       months.forEach((month) => {
+        const mes = months.indexOf(month) + 1;
         const tdVal = document.createElement('td');
         const value = Number(row[month] || 0);
         tdVal.classList.add('text-end', 'eri-cell-trace');
         const warningBadge = row.__eriWarnings?.[month] && isDebugMode
           ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
           : '';
-        tdVal.innerHTML = `<span>${fmt(value)}</span>${warningBadge}<span class="eri-trace-icon" title="Ver origen">🔎</span>`;
+        const codigo = String(row.CODE || '').trim();
+        const realValue = realValues[codigo]?.[mes] ?? '';
+        const status = realSaveState[cellKey(codigo, mes)] || 'idle';
+        tdVal.innerHTML = `
+          <div class="eri-cell-value-wrap">
+            <span>${fmt(value)}</span>${warningBadge}
+            <div class="eri-real-wrap">
+              <label class="eri-real-label">REAL</label>
+              <input
+                class="form-control form-control-sm eri-real-input"
+                type="text"
+                inputmode="decimal"
+                data-code="${escapeHtml(codigo)}"
+                data-desc="${escapeHtml(row.DESCRIPCION || '')}"
+                data-mes="${mes}"
+                value="${escapeHtml(realValue)}"
+                placeholder="0"
+              >
+              <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : ''}">${status === 'saved' ? '✓' : ''}</span>
+            </div>
+          </div>
+          <span class="eri-trace-icon" title="Ver origen">🔎</span>`;
         if (row.CODE) {
           tdVal.dataset.code = row.CODE;
           tdVal.dataset.desc = row.DESCRIPCION || '';
-          tdVal.dataset.month = String(months.indexOf(month) + 1);
+          tdVal.dataset.month = String(mes);
           tdVal.dataset.value = String(value);
         }
         tr.appendChild(tdVal);
@@ -477,6 +564,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
 
   tbody.addEventListener('click', (event) => {
+    if (event.target.closest('.eri-real-input') || event.target.closest('.eri-real-wrap')) {
+      return;
+    }
     const desgloseBtn = event.target.closest('button[data-action="eri-desglose-resultado-antes"]');
     if (desgloseBtn) {
       openDesgloseResultadoAntes().catch((e) => {
@@ -491,6 +581,30 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       drawerBody.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(e.message)}</div>`;
     });
   });
+
+  tbody.addEventListener('keydown', (event) => {
+    const input = event.target.closest('.eri-real-input');
+    if (!input) return;
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    input.blur();
+  });
+
+  tbody.addEventListener('blur', (event) => {
+    const input = event.target.closest('.eri-real-input');
+    if (!input) return;
+
+    const codigo = String(input.dataset.code || '').trim();
+    const descripcion = String(input.dataset.desc || '').trim();
+    const mes = Number(input.dataset.mes || 0);
+    if (!codigo || mes < 1 || mes > 12) return;
+
+    const raw = String(input.value || '').trim();
+    const value = raw === '' ? null : parseNumberSafe(raw);
+    if (!realValues[codigo]) realValues[codigo] = {};
+    realValues[codigo][mes] = raw;
+    saveRealValue({ codigo, descripcion, mes, valorReal: value });
+  }, true);
 
 
   const renderComparativoSummary = (resumen = {}) => {
@@ -739,6 +853,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       participacion: partInput.value,
       renta: rentaInput.value,
     });
+    await loadRealValues();
     renderRows(currentRows);
     exportLink.href = buildUrl('xlsx');
   };
