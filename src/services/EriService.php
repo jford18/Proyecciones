@@ -37,7 +37,7 @@ class EriService
             } elseif ($type === 'SUBTOTAL' && is_string($code)) {
                 $values = $this->subtotalFromDetails($code, $detailByCode);
             } elseif ($type === 'TOTAL' && is_string($code)) {
-                $values = $this->resolveTotal($code, $detailByCode);
+                $values = $this->resolveTotal($code, (string) ($meta['SOURCE_TABLE'] ?? ''), $periodo, (int) ($meta['SIGN'] ?? 1), $detailByCode);
             }
 
             $rowDesc = (string) $meta['DESCRIPCION'];
@@ -269,35 +269,77 @@ class EriService
         return $sum;
     }
 
-    private function resolveTotal(string $code, array $detailByCode): array
+    private function resolveTotal(string $code, string $sourceTable, int $periodo, int $sign, array $detailByCode): array
     {
         $sum = $this->zeroMonths();
-        $ranges = [
-            '401' => ['4010101', '4019003'],
-            '501' => ['5010101', '5010505'],
-            '701' => ['7010101', '7010260'],
-            '80101' => ['8010101', '8010125'],
-            '70301' => ['7030101', '7030140'],
-            '90101' => ['9010101', '9010125'],
-        ];
-        if (!isset($ranges[$code])) {
+        foreach ($detailByCode as $detailCode => $values) {
+            $detailCodeStr = (string) ($detailCode ?? '');
+            if ($detailCodeStr === '' || !str_starts_with($detailCodeStr, $code) || strlen($detailCodeStr) !== 7) {
+                continue;
+            }
+            foreach (self::MONTHS as $month) {
+                $sum[$month] += (float) ($values[$month] ?? 0.0);
+            }
+        }
+
+        if ($this->hasAnyMonthValue($sum)) {
             return $sum;
         }
 
-        [$start, $end] = $ranges[$code];
-        foreach ($detailByCode as $detailCode => $values) {
-            $detailCodeStr = (string) ($detailCode ?? '');
-            if ($detailCodeStr === '') {
-                continue;
+        if ($sourceTable === '') {
+            return $sum;
+        }
+
+        $fallback = $this->queryTotalFallbackFromSource($sourceTable, $periodo, $code);
+        if (!$this->hasAnyMonthValue($fallback)) {
+            return $sum;
+        }
+
+        foreach (self::MONTHS as $month) {
+            $fallback[$month] = ((float) ($fallback[$month] ?? 0.0)) * $sign;
+        }
+
+        return $fallback;
+    }
+
+    private function queryTotalFallbackFromSource(string $table, int $periodo, string $code): array
+    {
+        $sum = $this->zeroMonths();
+        $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(SUM(COALESCE(' . self::MONTH_TO_DB[$m] . ', 0)), 0) AS ' . $m, self::MONTHS));
+
+        $sqlLeaf = "SELECT {$monthSelect}, COUNT(*) AS CNT FROM {$table} WHERE ANIO = ? AND CODIGO LIKE ? AND CHAR_LENGTH(CODIGO) = 7";
+        $stmtLeaf = $this->pdo->prepare($sqlLeaf);
+        $stmtLeaf->execute([$periodo, $code . '%']);
+        $leaf = $stmtLeaf->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        if (((int) ($leaf['CNT'] ?? 0)) > 0) {
+            foreach (self::MONTHS as $month) {
+                $sum[$month] = (float) ($leaf[$month] ?? 0.0);
             }
-            if ($detailCodeStr >= $start && $detailCodeStr <= $end) {
-                foreach (self::MONTHS as $month) {
-                    $sum[$month] += (float) ($values[$month] ?? 0.0);
-                }
-            }
+            return $sum;
+        }
+
+        $sqlTotal = "SELECT {$monthSelect} FROM {$table} WHERE ANIO = ? AND CODIGO = ?";
+        $stmtTotal = $this->pdo->prepare($sqlTotal);
+        $stmtTotal->execute([$periodo, $code]);
+        $total = $stmtTotal->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        foreach (self::MONTHS as $month) {
+            $sum[$month] = (float) ($total[$month] ?? 0.0);
         }
 
         return $sum;
+    }
+
+    private function hasAnyMonthValue(array $values): bool
+    {
+        foreach (self::MONTHS as $month) {
+            if (abs((float) ($values[$month] ?? 0.0)) > 0.000001) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function applyFormulaRows(array &$rowsByRow, float $tasaPart, float $tasaRenta): void
@@ -319,6 +361,7 @@ class EriService
                 $resAntes += ((float) ($rowsByRow[$rowNumber][$month] ?? 0.0)) * $sign;
             }
             $rowsByRow[358][$month] = $resAntes;
+            $this->logResultadoAntesDebug($month, $resOperacion, (float) ($rowsByRow[328][$month] ?? 0.0), (float) ($rowsByRow[356][$month] ?? 0.0), $resAntes);
 
             $part = $resAntes > 0 ? -round($resAntes * $tasaPart, 0) : 0.0;
             $rowsByRow[362][$month] = $part;
@@ -329,6 +372,24 @@ class EriService
 
             $rowsByRow[366][$month] = $resAntes + $part + $ir;
         }
+    }
+
+
+    private function logResultadoAntesDebug(string $month, float $resultadoOperacion, float $totalGastosFinancieros, float $totalOtrosEgresos, float $resultadoAntes): void
+    {
+        $enabled = filter_var((string) getenv('ERI_DEBUG_RESULTADO_ANTES'), FILTER_VALIDATE_BOOL);
+        if (!$enabled) {
+            return;
+        }
+
+        error_log(sprintf(
+            '[ERI][RESULTADO_ANTES][%s] ResultadoOperacion=%s TotalGastosFinancieros=%s TotalOtrosEgresos=%s ResultadoAntes=%s',
+            $month,
+            (string) $resultadoOperacion,
+            (string) $totalGastosFinancieros,
+            (string) $totalOtrosEgresos,
+            (string) $resultadoAntes
+        ));
     }
 
     private function sumMonths(array $row): float

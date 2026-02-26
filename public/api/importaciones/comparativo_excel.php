@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -83,17 +84,24 @@ function cmpExcelMonthMap(): array
     ];
 }
 
+
+function cmpExcelGetCellValue(Worksheet $sheet, int $col, int $row): mixed
+{
+    $cellRef = Coordinate::stringFromColumnIndex($col) . $row;
+    return $sheet->getCell($cellRef)->getCalculatedValue();
+}
+
 function cmpExcelFindHeaderRow(Worksheet $sheet): array
 {
     $monthMap = cmpExcelMonthMap();
     $maxRow = min(80, max(1, $sheet->getHighestDataRow()));
-    $maxCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
+    $maxCol = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
 
     for ($row = 1; $row <= $maxRow; $row++) {
         $cuentaCol = null;
         $monthCols = [];
         for ($col = 1; $col <= $maxCol; $col++) {
-            $raw = (string) $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue();
+            $raw = (string) cmpExcelGetCellValue($sheet, $col, $row);
             $cell = cmpExcelNormalizeText($raw);
             if ($cell === '') {
                 continue;
@@ -137,14 +145,14 @@ function cmpExcelLoadTemplateRows(string $tab): array
 
     $rows = [];
     for ($r = ((int) $header['header_row']) + 1, $max = $sheet->getHighestDataRow(); $r <= $max; $r++) {
-        $cuenta = trim((string) $sheet->getCellByColumnAndRow($cuentaCol, $r)->getFormattedValue());
+        $cuenta = trim((string) cmpExcelGetCellValue($sheet, $cuentaCol, $r));
         if ($cuenta === '') {
             continue;
         }
 
         $rows[$cuenta] = [];
         foreach ($monthCols as $month => $col) {
-            $rows[$cuenta][$month] = comparativoNormalizeNumber($sheet->getCellByColumnAndRow((int) $col, $r)->getFormattedValue());
+            $rows[$cuenta][$month] = comparativoNormalizeNumber(cmpExcelGetCellValue($sheet, (int) $col, $r));
         }
     }
 

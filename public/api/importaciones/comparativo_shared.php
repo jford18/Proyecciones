@@ -127,9 +127,21 @@ function comparativoNormalizeNumber(mixed $value): float
             $text = str_replace(',', '', $text);
         }
     } elseif ($hasComma) {
-        $text = substr_count($text, ',') > 1 ? str_replace(',', '', $text) : str_replace(',', '.', $text);
-    } elseif ($hasDot && substr_count($text, '.') > 1) {
-        $text = str_replace('.', '', $text);
+        if (substr_count($text, ',') > 1) {
+            $text = str_replace(',', '', $text);
+        } else {
+            $parts = explode(',', $text);
+            $text = (count($parts) === 2 && strlen($parts[1]) === 3) ? str_replace(',', '', $text) : str_replace(',', '.', $text);
+        }
+    } elseif ($hasDot) {
+        if (substr_count($text, '.') > 1) {
+            $text = str_replace('.', '', $text);
+        } else {
+            $parts = explode('.', $text);
+            if (count($parts) === 2 && strlen($parts[1]) === 3) {
+                $text = str_replace('.', '', $text);
+            }
+        }
     }
 
     $number = is_numeric($text) ? (float) $text : 0.0;
