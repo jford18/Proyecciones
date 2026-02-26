@@ -23,14 +23,6 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <a id="eri-exportar" class="btn btn-outline-success" href="#" target="_blank" rel="noopener">Exportar Excel</a>
         <button id="eri-comparativo-open" class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#eriComparativoModal">COMPARATIVO</button>
       </div>
-      <div class="col-md-3">
-        <label class="form-label" for="eri-real-size">Tamaño campo REAL</label>
-        <select id="eri-real-size" class="form-select">
-          <option value="small">Pequeño</option>
-          <option value="normal" selected>Normal</option>
-          <option value="large">Grande</option>
-        </select>
-      </div>
     </div>
 
     <div class="table-sticky eri-table-wrap">
@@ -39,7 +31,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
           <?php foreach ($months as $month): ?>
-            <th class="text-center"><?= $month ?></th><th class="text-center">REAL</th><th class="text-center">%</th>
+            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
           <?php endforeach; ?>
           <th class="text-center eri-sticky-total">TOTAL</th>
           <th class="text-center eri-sticky-pct">%</th>
@@ -154,7 +146,6 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const partInput = document.getElementById('eri-participacion');
   const rentaInput = document.getElementById('eri-renta');
   const exportLink = document.getElementById('eri-exportar');
-  const realSizeControl = document.getElementById('eri-real-size');
   const drawerBody = document.getElementById('eri-origen-body');
   const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
   const compAlert = document.getElementById('eri-comparativo-alert');
@@ -186,17 +177,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   let currentComparativo = null;
   let currentMeta = null;
   let currentExcelTmpFile = '';
-
-  const applyRealInputSize = (size) => {
-    const allowedSizes = ['small', 'normal', 'large'];
-    const safeSize = allowedSizes.includes(size) ? size : 'normal';
-    const wrap = document.querySelector('.eri-table-wrap');
-    if (!wrap) return;
-    wrap.classList.remove('eri-real-size-small', 'eri-real-size-normal', 'eri-real-size-large');
-    wrap.classList.add(`eri-real-size-${safeSize}`);
-    if (realSizeControl) realSizeControl.value = safeSize;
-    window.localStorage.setItem('eri-real-size', safeSize);
-  };
+  const W_NUM = 90;
+  const W_PCT = 48;
 
   const fmt = (value) => {
     const rounded = Math.round(Number(value || 0));
@@ -526,6 +508,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         const tdVal = document.createElement('td');
         const value = Number(row[month] || 0);
         tdVal.classList.add('text-end', 'eri-cell-trace');
+        tdVal.style.width = `${W_NUM}px`;
+        tdVal.style.minWidth = `${W_NUM}px`;
+        tdVal.style.maxWidth = `${W_NUM}px`;
         const warningBadge = row.__eriWarnings?.[month] && isDebugMode
           ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
           : '';
@@ -546,6 +531,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
         const tdReal = document.createElement('td');
         tdReal.classList.add('text-end');
+        tdReal.style.width = `${W_NUM}px`;
+        tdReal.style.minWidth = `${W_NUM}px`;
+        tdReal.style.maxWidth = `${W_NUM}px`;
         if (isDetalle) {
           const realValue = realValues[codigo]?.[mes] ?? '';
           const status = realSaveState[cellKey(codigo, mes)] || 'idle';
@@ -571,6 +559,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         const tdPct = document.createElement('td');
         tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
         tdPct.classList.add('text-end');
+        tdPct.style.width = `${W_PCT}px`;
+        tdPct.style.minWidth = `${W_PCT}px`;
+        tdPct.style.maxWidth = `${W_PCT}px`;
         tr.appendChild(tdPct);
       });
 
@@ -901,11 +892,6 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
 
   document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
-  if (realSizeControl) {
-    realSizeControl.addEventListener('change', () => {
-      applyRealInputSize(realSizeControl.value);
-    });
-  }
   [partInput, rentaInput].forEach((input) => {
     input.addEventListener('input', () => {
       if (!Array.isArray(currentRows) || currentRows.length === 0) return;
@@ -942,7 +928,6 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   }
 
   updateModoUi();
-  applyRealInputSize(window.localStorage.getItem('eri-real-size') || 'normal');
   load().catch((e) => alert(e.message));
 })();
 </script>
