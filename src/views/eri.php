@@ -219,7 +219,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       });
       const data = await response.json();
       if (!response.ok || !data?.ok) {
-        throw new Error(data?.message || `Error HTTP ${response.status}`);
+        throw new Error(data?.error || data?.message || `Error HTTP ${response.status}`);
       }
       realSaveState[key] = 'saved';
       setCellStatus(codigo, mes, 'saved');
