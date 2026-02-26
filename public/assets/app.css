@@ -27,13 +27,13 @@ body { background: #f3f6fb; }
 .eri-cell-trace:hover .eri-trace-icon { opacity: 1; }
 
 .eri-cell-value-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; }
-.eri-real-wrap { display: inline-flex; align-items: center; gap: 0.25rem; }
-.eri-real-label { font-size: 0.65rem; color: #64748b; margin: 0; }
-.eri-real-input { width: 92px; min-width: 80px; max-width: 110px; text-align: right; border-color: #cbd5e1; }
-.eri-real-status { width: 12px; display: inline-block; text-align: center; font-size: 0.7rem; line-height: 1; }
+.eri-real-wrap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.3rem; width: 100%; min-height: 24px; }
+.eri-real-input { width: 86px; min-width: 86px; max-width: 86px; height: 24px; padding: 0.1rem 0.35rem; text-align: right; border-color: #cbd5e1; line-height: 1.1; }
+.eri-real-status { min-width: 28px; display: inline-block; text-align: left; font-size: 0.65rem; line-height: 1; }
 .eri-real-status-saving { color: #64748b; }
 .eri-real-status-saved { color: #16a34a; }
 .eri-real-status-error { color: #dc2626; }
+.eri-real-empty { color: #94a3b8; font-size: 0.75rem; display: inline-block; min-width: 86px; text-align: center; }
 
 @media (max-width: 992px) {
   .app-shell { flex-direction: column; }
