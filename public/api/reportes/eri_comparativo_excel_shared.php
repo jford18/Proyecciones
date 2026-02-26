@@ -48,9 +48,21 @@ function eriComparativoNormalizeNumber(mixed $value): float
             $text = str_replace(',', '', $text);
         }
     } elseif ($hasComma) {
-        $text = substr_count($text, ',') > 1 ? str_replace(',', '', $text) : str_replace(',', '.', $text);
-    } elseif ($hasDot && substr_count($text, '.') > 1) {
-        $text = str_replace('.', '', $text);
+        if (substr_count($text, ',') > 1) {
+            $text = str_replace(',', '', $text);
+        } else {
+            $parts = explode(',', $text);
+            $text = (count($parts) === 2 && strlen($parts[1]) === 3) ? str_replace(',', '', $text) : str_replace(',', '.', $text);
+        }
+    } elseif ($hasDot) {
+        if (substr_count($text, '.') > 1) {
+            $text = str_replace('.', '', $text);
+        } else {
+            $parts = explode('.', $text);
+            if (count($parts) === 2 && strlen($parts[1]) === 3) {
+                $text = str_replace('.', '', $text);
+            }
+        }
     }
 
     $number = is_numeric($text) ? (float) $text : 0.0;
@@ -90,6 +102,13 @@ function eriComparativoMonthAliases(): array
     ];
 }
 
+
+function eriComparativoGetCellValue(Worksheet $sheet, int $col, int $row): mixed
+{
+    $cellRef = Coordinate::stringFromColumnIndex($col) . $row;
+    return $sheet->getCell($cellRef)->getCalculatedValue();
+}
+
 function eriComparativoFindExcelHeaders(Worksheet $sheet): array
 {
     $aliases = eriComparativoMonthAliases();
@@ -102,7 +121,7 @@ function eriComparativoFindExcelHeaders(Worksheet $sheet): array
         $monthCols = [];
 
         for ($col = 1; $col <= $maxCol; $col++) {
-            $raw = (string) $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue();
+            $raw = (string) eriComparativoGetCellValue($sheet, $col, $row);
             $label = eriComparativoNormalizeText($raw);
             if ($label === '') {
                 continue;
@@ -155,12 +174,12 @@ function eriComparativoReadExcelRows(string $filePath): array
 
     $rows = [];
     for ($r = ((int) $header['header_row']) + 1, $max = $sheet->getHighestDataRow(); $r <= $max; $r++) {
-        $code = trim((string) $sheet->getCellByColumnAndRow($codeCol, $r)->getFormattedValue());
+        $code = trim((string) eriComparativoGetCellValue($sheet, $codeCol, $r));
         if ($code === '') {
             continue;
         }
 
-        $name = trim((string) $sheet->getCellByColumnAndRow($nameCol, $r)->getFormattedValue());
+        $name = trim((string) eriComparativoGetCellValue($sheet, $nameCol, $r));
         $rows[$code] ??= ['NOMBRE' => $name, 'MESES' => []];
         if ($rows[$code]['NOMBRE'] === '' && $name !== '') {
             $rows[$code]['NOMBRE'] = $name;
@@ -168,7 +187,7 @@ function eriComparativoReadExcelRows(string $filePath): array
 
         foreach (ERI_COMPARATIVO_MONTHS as $month) {
             $col = (int) ($monthCols[$month] ?? 0);
-            $value = $col > 0 ? $sheet->getCellByColumnAndRow($col, $r)->getFormattedValue() : 0;
+            $value = $col > 0 ? eriComparativoGetCellValue($sheet, $col, $r) : 0;
             $rows[$code]['MESES'][$month] = eriComparativoNormalizeNumber($value);
         }
     }
