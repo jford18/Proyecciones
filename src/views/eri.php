@@ -31,7 +31,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
           <?php foreach ($months as $month): ?>
-            <th class="text-center"><?= $month ?></th><th class="text-center">%</th>
+            <th class="text-center"><?= $month ?></th><th class="text-center">REAL</th><th class="text-center">%</th>
           <?php endforeach; ?>
           <th class="text-center eri-sticky-total">TOTAL</th>
           <th class="text-center eri-sticky-pct">%</th>
@@ -188,6 +188,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const getPeriodoMes = () => Number(`${yearInput.value || new Date().getFullYear()}01`);
 
   const cellKey = (codigo, mes) => `${String(codigo || '').trim()}|${Number(mes || 0)}`;
+  const ES_DETALLE = (CODIGO) => CODIGO && CODIGO.toString().trim().length >= 7;
 
   const setCellStatus = (codigo, mes, status) => {
     const key = cellKey(codigo, mes);
@@ -195,7 +196,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const indicator = document.querySelector(`.eri-real-status[data-key="${CSS.escape(key)}"]`);
     if (!indicator) return;
     indicator.className = `eri-real-status eri-real-status-${status || 'idle'}`;
-    indicator.textContent = status === 'saved' ? '✓' : (status === 'error' ? '⚠' : (status === 'saving' ? '…' : ''));
+    indicator.textContent = status === 'saved' ? '✔' : (status === 'error' ? 'Error' : (status === 'saving' ? '…' : ''));
     indicator.title = status === 'saved'
       ? 'Guardado'
       : (status === 'error' ? 'Error al guardar' : (status === 'saving' ? 'Guardando...' : ''));
@@ -509,13 +510,27 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
           ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
           : '';
         const codigo = String(row.CODE || '').trim();
-        const realValue = realValues[codigo]?.[mes] ?? '';
-        const status = realSaveState[cellKey(codigo, mes)] || 'idle';
+        const isDetalle = ES_DETALLE(codigo);
         tdVal.innerHTML = `
           <div class="eri-cell-value-wrap">
             <span>${fmt(value)}</span>${warningBadge}
+          </div>
+          <span class="eri-trace-icon" title="Ver origen">🔎</span>`;
+        if (row.CODE) {
+          tdVal.dataset.code = row.CODE;
+          tdVal.dataset.desc = row.DESCRIPCION || '';
+          tdVal.dataset.month = String(mes);
+          tdVal.dataset.value = String(value);
+        }
+        tr.appendChild(tdVal);
+
+        const tdReal = document.createElement('td');
+        tdReal.classList.add('text-end');
+        if (isDetalle) {
+          const realValue = realValues[codigo]?.[mes] ?? '';
+          const status = realSaveState[cellKey(codigo, mes)] || 'idle';
+          tdReal.innerHTML = `
             <div class="eri-real-wrap">
-              <label class="eri-real-label">REAL</label>
               <input
                 class="form-control form-control-sm eri-real-input"
                 type="text"
@@ -526,17 +541,12 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
                 value="${escapeHtml(realValue)}"
                 placeholder="0"
               >
-              <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : ''}">${status === 'saved' ? '✓' : ''}</span>
-            </div>
-          </div>
-          <span class="eri-trace-icon" title="Ver origen">🔎</span>`;
-        if (row.CODE) {
-          tdVal.dataset.code = row.CODE;
-          tdVal.dataset.desc = row.DESCRIPCION || '';
-          tdVal.dataset.month = String(mes);
-          tdVal.dataset.value = String(value);
+              <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
+            </div>`;
+        } else {
+          tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
         }
-        tr.appendChild(tdVal);
+        tr.appendChild(tdReal);
 
         const tdPct = document.createElement('td');
         tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
