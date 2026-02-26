@@ -206,7 +206,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const key = cellKey(codigo, mes);
     setCellStatus(codigo, mes, 'saving');
     try {
-      const response = await fetch('/api/eri-real/upsert', {
+      const response = await fetch('/api/eri/origen.php?mod=ERI_REAL&op=UPSERT', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
@@ -230,7 +230,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   };
 
   const loadRealValues = async () => {
-    const response = await fetch(`/api/eri-real?periodo_mes=${encodeURIComponent(getPeriodoMes())}`, {
+    const response = await fetch(`/api/eri/origen.php?mod=ERI_REAL&op=LIST&periodo_mes=${encodeURIComponent(getPeriodoMes())}`, {
       headers: { Accept: 'application/json' },
     });
     const payload = await response.json();
@@ -610,7 +610,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     if (!codigo || mes < 1 || mes > 12) return;
 
     const raw = String(input.value || '').trim();
-    const value = raw === '' ? null : parseNumberSafe(raw);
+    const value = raw === '' ? null : raw;
     if (!realValues[codigo]) realValues[codigo] = {};
     realValues[codigo][mes] = raw;
     saveRealValue({ codigo, descripcion, mes, valorReal: value });
