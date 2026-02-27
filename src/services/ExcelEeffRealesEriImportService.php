@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\services;
 
 use App\repositories\PresupuestoIngresosRepository;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -176,8 +177,8 @@ class ExcelEeffRealesEriImportService
 
         for ($rowNum = $headerMap['header_row'] + 1; $rowNum <= $highestRow; $rowNum++) {
             $totalRows++;
-            $codigo = trim((string) $sheet->getCellByColumnAndRow($headerMap['codigo'], $rowNum)->getFormattedValue());
-            $descripcion = trim((string) $sheet->getCellByColumnAndRow($headerMap['descripcion'], $rowNum)->getFormattedValue());
+            $codigo = trim((string) $this->cellValue($sheet, (int) $headerMap['codigo'], $rowNum, false));
+            $descripcion = trim((string) $this->cellValue($sheet, (int) $headerMap['descripcion'], $rowNum, false));
 
             $item = [
                 'codigo' => $codigo,
@@ -249,11 +250,11 @@ class ExcelEeffRealesEriImportService
     private function resolveHeaderMap(Worksheet $sheet): array
     {
         $highestRow = min((int) $sheet->getHighestRow(), 25);
-        $highestCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $highestCol = Coordinate::columnIndexFromString($sheet->getHighestColumn());
         for ($row = 1; $row <= $highestRow; $row++) {
             $map = ['header_row' => $row];
             for ($col = 1; $col <= $highestCol; $col++) {
-                $text = strtoupper(trim((string) $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue()));
+                $text = strtoupper(trim((string) $this->cellValue($sheet, $col, $row, false)));
                 if ($text === 'CODIGO') { $map['codigo'] = $col; }
                 if (in_array($text, ['DESCRIPCION', 'DESCRIPCIÓN'], true)) { $map['descripcion'] = $col; }
                 foreach (self::MONTH_KEYS as $month) {
@@ -274,7 +275,7 @@ class ExcelEeffRealesEriImportService
         if ($column === null || $column <= 0) {
             return 0.0;
         }
-        $raw = $sheet->getCellByColumnAndRow($column, $rowNum)->getFormattedValue();
+        $raw = $this->cellValue($sheet, $column, $rowNum, true);
         $parsed = $this->numberParser->parse($raw);
         if (($parsed['is_numeric'] ?? false) !== true) {
             $details[] = $this->detail($rowNum, (string) $column, 'WARNING', 'INVALID_NUMERIC', 'Valor numérico inválido; se interpreta como 0.', (string) $raw);
@@ -282,6 +283,17 @@ class ExcelEeffRealesEriImportService
         }
 
         return (float) ($parsed['value'] ?? 0.0);
+    }
+
+    private function cellValue(Worksheet $sheet, int $col, int $row, bool $calculated = true): mixed
+    {
+        $addr = Coordinate::stringFromColumnIndex($col) . $row;
+        $cell = $sheet->getCell($addr);
+        if (!$cell) {
+            return null;
+        }
+
+        return $calculated ? $cell->getCalculatedValue() : $cell->getValue();
     }
 
     private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, array $counts, array $details): string
