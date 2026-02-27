@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\controllers;
 
+use App\exceptions\ImportExecuteDebugException;
 use App\services\ExcelTemplateImportService;
 use App\services\ExcelIngresosImportService;
 use App\services\ExcelCostosImportService;
@@ -340,44 +341,45 @@ class ExcelImportController
     {
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
+        $tipo = strtoupper(trim((string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO'))));
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
-            $result = $this->ingresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->ingresosService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_INGRESOS';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
-            $result = $this->costosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->costosService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_COSTOS';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'otros_ingresos' && $this->otrosIngresosService instanceof ExcelOtrosIngresosImportService) {
-            $result = $this->otrosIngresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->otrosIngresosService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_OTROS_INGRESOS';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'otros_egresos' && $this->otrosEgresosService instanceof ExcelOtrosEgresosImportService) {
-            $result = $this->otrosEgresosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->otrosEgresosService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_OTROS_EGRESOS';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
-            $result = $this->gastosOperacionalesService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->gastosOperacionalesService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_GASTOS_OPERACIONALES';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'gastos_financieros' && $this->gastosFinancierosService instanceof ExcelGastosFinancierosImportService) {
-            $result = $this->gastosFinancierosService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->gastosFinancierosService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_GASTOS_FINANCIEROS';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
         }
         if (($template['id'] ?? '') === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
-            $result = $this->produccionService->validate($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $this->resolveAnioRequest($post), $uploaded['originalName']);
+            $result = $this->produccionService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_PRODUCCION';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
@@ -415,7 +417,7 @@ class ExcelImportController
         return [
             'ok' => true,
             'tab' => $template['id'],
-            'tipo' => (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
+            'tipo' => $tipo,
             'sheet_name' => $result['sheet_name'],
             'template_id' => $result['template_id'],
             'file_name' => $result['file_name'],
@@ -439,26 +441,27 @@ class ExcelImportController
     {
         $template = $this->resolveTemplate($post);
         $uploaded = $this->saveUploadedExcel($files);
+        $tipo = strtoupper(trim((string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO'))));
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
-            return $this->ingresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->ingresosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'costos' && $this->costosService instanceof ExcelCostosImportService) {
-            return $this->costosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->costosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'otros_ingresos' && $this->otrosIngresosService instanceof ExcelOtrosIngresosImportService) {
-            return $this->otrosIngresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->otrosIngresosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'otros_egresos' && $this->otrosEgresosService instanceof ExcelOtrosEgresosImportService) {
-            return $this->otrosEgresosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->otrosEgresosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'gastos_operacionales' && $this->gastosOperacionalesService instanceof ExcelGastosOperacionalesImportService) {
-            return $this->gastosOperacionalesService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->gastosOperacionalesService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'gastos_financieros' && $this->gastosFinancierosService instanceof ExcelGastosFinancierosImportService) {
-            return $this->gastosFinancierosService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->gastosFinancierosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         if (($template['id'] ?? '') === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
-            return $this->produccionService->execute($uploaded['path'], (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')), $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
+            return $this->produccionService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->execute($uploaded['path'], $template, $user);
         $result['file_name'] = $uploaded['originalName'];
@@ -467,7 +470,7 @@ class ExcelImportController
         return [
             'ok' => true,
             'tab' => $template['id'],
-            'tipo' => (string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO')),
+            'tipo' => $tipo,
             'target_table' => (string) ($result['target_table'] ?? ''),
             'inserted_count' => (int) ($result['counts']['imported_rows'] ?? 0),
             'updated_count' => (int) ($result['counts']['updated_rows'] ?? 0),
@@ -632,15 +635,15 @@ class ExcelImportController
             $this->respondJson($response);
         } catch (\RuntimeException $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $payload = $this->buildJsonErrorPayload($e);
-            if ($this->isLocalDebug()) {
+            $payload = $this->buildProduccionExecuteDebugPayload($e) ?? $this->buildJsonErrorPayload($e);
+            if ($this->isLocalDebug() && !isset($payload['debug'])) {
                 $payload['debug'] = $e->getTraceAsString();
             }
             $this->respondJson($payload, 500);
         } catch (\Throwable $e) {
             $this->logImport('EXECUTE END ok=false status=500 error=' . $e->getMessage());
-            $payload = $this->buildJsonErrorPayload($e);
-            if ($this->isLocalDebug()) {
+            $payload = $this->buildProduccionExecuteDebugPayload($e) ?? $this->buildJsonErrorPayload($e);
+            if ($this->isLocalDebug() && !isset($payload['debug'])) {
                 $payload['debug'] = $e->getTraceAsString();
             }
             $this->respondJson($payload, 500);
@@ -692,6 +695,85 @@ class ExcelImportController
             }
             $this->respondJson($payload, 500);
         }
+    }
+
+    private function isProduccionExecuteRequest(): bool
+    {
+        $tab = strtolower(trim((string) ($_GET['tab'] ?? $_POST['template_id'] ?? $_POST['sheet_name'] ?? '')));
+        $action = strtolower(trim((string) ($_GET['action'] ?? '')));
+
+        return $tab === 'produccion' && $action === 'execute';
+    }
+
+    private function buildProduccionExecuteDebugPayload(\Throwable $e): ?array
+    {
+        if (!$this->isProduccionExecuteRequest()) {
+            return null;
+        }
+
+        $tipo = strtoupper(trim((string) ($_POST['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO'))));
+        $fileName = (string) ($_FILES['file']['name'] ?? $_FILES['excel']['name'] ?? '');
+        $sheetName = (string) ($_POST['sheet_name'] ?? '');
+        $sql = null;
+        $paramsKeys = [];
+        $paramsCount = 0;
+        $pdoErrorInfo = null;
+
+        $base = [
+            'tab' => 'produccion',
+            'tipo' => $tipo,
+            'file_name' => $fileName,
+            'json_path' => 'var/import_store/produccion.json',
+            'sheet_name' => $sheetName,
+            'sql' => $sql,
+            'params_count' => $paramsCount,
+            'params_keys' => $paramsKeys,
+            'pdo_errorInfo' => $pdoErrorInfo,
+        ];
+
+        if ($e instanceof ImportExecuteDebugException) {
+            $ctx = $e->debugContext();
+            if (is_array($ctx)) {
+                $base = array_merge($base, $ctx);
+            }
+            $prev = $e->getPrevious();
+            if ($prev instanceof \PDOException && is_array($prev->errorInfo ?? null)) {
+                $base['pdo_errorInfo'] = $prev->errorInfo;
+            }
+        }
+
+        if ($e instanceof \PDOException && is_array($e->errorInfo ?? null)) {
+            $base['pdo_errorInfo'] = $e->errorInfo;
+        }
+
+        $prefix = '[IMPORT][PRODUCCION][EXECUTE][' . $tipo . '] ';
+        error_log($prefix . $e->getMessage() . ' debug=' . json_encode([
+            'tab' => $base['tab'] ?? 'produccion',
+            'tipo' => $base['tipo'] ?? $tipo,
+            'file_name' => $base['file_name'] ?? '',
+            'json_path' => $base['json_path'] ?? '',
+            'sheet_name' => $base['sheet_name'] ?? '',
+            'sql' => $base['sql'] ?? null,
+            'params_count' => (int) ($base['params_count'] ?? 0),
+            'params_keys' => array_values($base['params_keys'] ?? []),
+            'pdo_errorInfo' => $base['pdo_errorInfo'] ?? null,
+        ], JSON_UNESCAPED_UNICODE));
+
+        return [
+            'ok' => false,
+            'message' => $e->getMessage(),
+            'debug' => [
+                'tab' => $base['tab'] ?? 'produccion',
+                'tipo' => $base['tipo'] ?? $tipo,
+                'file_name' => $base['file_name'] ?? '',
+                'json_path' => $base['json_path'] ?? '',
+                'sheet_name' => $base['sheet_name'] ?? '',
+                'sql' => $base['sql'] ?? null,
+                'params_count' => (int) ($base['params_count'] ?? 0),
+                'params_keys' => array_values($base['params_keys'] ?? []),
+                'pdo_errorInfo' => $base['pdo_errorInfo'] ?? null,
+            ],
+        ];
     }
 
     private function buildJsonErrorPayload(\Throwable $e): array

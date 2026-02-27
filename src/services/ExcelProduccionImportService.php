@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\services;
 
+use App\exceptions\ImportExecuteDebugException;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
@@ -103,39 +104,67 @@ class ExcelProduccionImportService
 
     public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null): array
     {
-        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
-        $upsert = $this->repository->upsertProduccionRows($tipo, $parsed['sheet_name'], $parsed['file_name'], $usuario, $parsed['rows']);
+        $tipo = strtoupper(trim($tipo));
+        if (!in_array($tipo, ['PRESUPUESTO', 'REAL'], true)) {
+            throw new \RuntimeException('Tipo no soportado para Producción: ' . $tipo);
+        }
 
-        $counts = $parsed['counts'];
-        $counts['imported_rows'] = (int) ($upsert['inserted_count'] ?? 0);
-        $counts['updated_rows'] = (int) ($upsert['updated_count'] ?? 0);
-
-        $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $usuario, $counts, $parsed['details']);
-
-        $response = [
-            'ok' => true,
+        $debug = [
             'tab' => 'produccion',
             'tipo' => $tipo,
-            'target_table' => 'PRESUPUESTO_PRODUCCION',
-            'file_name' => $parsed['file_name'],
-            'sheet_name' => $parsed['sheet_name'],
-            'anio' => $parsed['anio'],
-            'inserted_count' => $counts['imported_rows'],
-            'updated_count' => $counts['updated_rows'],
-            'skipped_count' => (int) ($counts['omitted_rows'] ?? 0),
-            'warning_count' => (int) ($counts['warning_rows'] ?? 0),
-            'error_count' => (int) ($counts['error_rows'] ?? 0),
-            'counts' => $counts,
-            'details' => $parsed['details'],
-            'preview' => array_slice($parsed['rows'], 0, 30),
-            'json_path' => $jsonPath,
-            'user' => $usuario,
-            'timestamp' => date('c'),
+            'file_name' => $originalFileName ?: basename($fileTmpPath),
+            'json_path' => 'var/import_store/produccion.json',
+            'sheet_name' => null,
         ];
 
-        $this->repository->insertImportLog($response + ['usuario' => $usuario]);
+        try {
+            $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+            $debug['sheet_name'] = (string) ($parsed['sheet_name'] ?? '');
+            $debug['file_name'] = (string) ($parsed['file_name'] ?? $debug['file_name']);
+            if (trim((string) ($parsed['sheet_name'] ?? '')) === '') {
+                throw new \RuntimeException('No se pudo resolver sheet_name para Producción.');
+            }
 
-        return $response;
+            $upsert = $this->repository->upsertProduccionRows($tipo, $parsed['sheet_name'], $parsed['file_name'], $usuario, $parsed['rows']);
+
+            $counts = $parsed['counts'];
+            $counts['imported_rows'] = (int) ($upsert['inserted_count'] ?? 0);
+            $counts['updated_rows'] = (int) ($upsert['updated_count'] ?? 0);
+
+            $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $usuario, $counts, $parsed['details']);
+            $debug['json_path'] = $jsonPath;
+
+            $response = [
+                'ok' => true,
+                'tab' => 'produccion',
+                'tipo' => $tipo,
+                'target_table' => 'PRESUPUESTO_PRODUCCION',
+                'file_name' => $parsed['file_name'],
+                'sheet_name' => $parsed['sheet_name'],
+                'anio' => $parsed['anio'],
+                'inserted_count' => $counts['imported_rows'],
+                'updated_count' => $counts['updated_rows'],
+                'skipped_count' => (int) ($counts['omitted_rows'] ?? 0),
+                'warning_count' => (int) ($counts['warning_rows'] ?? 0),
+                'error_count' => (int) ($counts['error_rows'] ?? 0),
+                'counts' => $counts,
+                'details' => $parsed['details'],
+                'preview' => array_slice($parsed['rows'], 0, 30),
+                'json_path' => $jsonPath,
+                'user' => $usuario,
+                'timestamp' => date('c'),
+            ];
+
+            $this->repository->insertImportLog($response + ['usuario' => $usuario]);
+
+            return $response;
+        } catch (\PDOException $e) {
+            $debug['sql'] = method_exists($e, 'getMessage') ? $e->getMessage() : null;
+            $debug['pdo_errorInfo'] = is_array($e->errorInfo ?? null) ? $e->errorInfo : null;
+            throw new ImportExecuteDebugException('Error de base de datos al ejecutar importación de Producción.', $debug, $e);
+        } catch (\Throwable $e) {
+            throw new ImportExecuteDebugException('Error al ejecutar importación de Producción.', $debug, $e);
+        }
     }
 
     private function parseProduccion(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null): array
