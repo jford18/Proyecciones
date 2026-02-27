@@ -18,15 +18,17 @@ class EriService
 
     public function __construct(private PDO $pdo) {}
 
-    public function build(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25): array
+    public function build(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25, string $tipoReal = 'REAL'): array
     {
         $template = $this->buildTemplate();
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
         ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
+        $realByCode = $this->loadImportedRealByCode($periodo, $tipoReal);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
+        $matchedRealRows = 0;
 
         foreach ($template as $meta) {
             $values = $this->zeroMonths();
@@ -51,6 +53,13 @@ class EriService
                 'DESCRIPCION' => $rowDesc,
                 'TYPE' => $type,
             ] + $values;
+
+            $realValues = $this->zeroRealMonths();
+            if (is_string($code) && $code !== '' && isset($realByCode[$code])) {
+                $realValues = $realByCode[$code];
+                $matchedRealRows++;
+            }
+            $row = array_merge($row, $realValues);
 
             $rows[] = $row;
             $rowsByRow[(int) $row['ROW']] = $row;
@@ -79,6 +88,8 @@ class EriService
             }
         }
         unset($row);
+
+        error_log(sprintf('[ERI][REAL] anio=%d rows=%d match_real=%d', $periodo, count($rows), $matchedRealRows));
 
         return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
     }
@@ -410,6 +421,51 @@ class EriService
         }
 
         return $row;
+    }
+
+
+    private function zeroRealMonths(): array
+    {
+        $row = [];
+        foreach (self::MONTHS as $month) {
+            $row['REAL_' . $month] = 0.0;
+        }
+        $row['REAL_TOTAL'] = 0.0;
+
+        return $row;
+    }
+
+    private function loadImportedRealByCode(int $periodo, string $tipoReal): array
+    {
+        $monthSelect = implode(', ', self::MONTHS);
+        $sql = "SELECT CODIGO, {$monthSelect}, TOTAL FROM EEFF_REALES_ERI_IMPORT WHERE ANIO = :anio";
+        $params = ['anio' => $periodo];
+        $tipo = strtoupper(trim($tipoReal));
+        if ($tipo !== '') {
+            $sql .= ' AND UPPER(COALESCE(TIPO, "")) = :tipo';
+            $params['tipo'] = $tipo;
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $code = trim((string) ($row['CODIGO'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+
+            $real = $this->zeroRealMonths();
+            foreach (self::MONTHS as $month) {
+                $real['REAL_' . $month] = (float) ($row[$month] ?? 0.0);
+            }
+            $real['REAL_TOTAL'] = (float) ($row['TOTAL'] ?? 0.0);
+            $out[$code] = $real;
+        }
+
+        return $out;
     }
 
     private function emptyRow(int $rowNumber, ?string $code, string $desc, string $type): array
