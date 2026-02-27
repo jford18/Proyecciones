@@ -205,7 +205,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         downloadExcelBtn.href = `${base}&action=export_xlsx`;
         viewExcelBtn.dataset.anio = String(selectedAnio || '');
         viewExcelBtn.style.display = hasExcelPreview ? '' : 'none';
-        downloadExcelBtn.style.display = '';
+        downloadExcelBtn.style.display = tab === 'eeff_reales_eri' ? 'none' : '';
       }
 
       if (mode === 'execute' && inserted + updated === 0 && (counts.importable_rows ?? 0) > 0) {
@@ -220,17 +220,31 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       renderDetails();
 
       const preview = Array.isArray(payload.preview) ? payload.preview : [];
-      if (previewHead) {
-        previewHead.innerHTML = '<tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr>';
+      if (tab === 'eeff_reales_eri') {
+        if (previewHead) {
+          previewHead.innerHTML = '<tr><th>Código</th><th>Descripción</th><th>Enero</th><th>Total</th></tr>';
+        }
+        previewBody.innerHTML = preview.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.codigo ?? row.CODIGO ?? '')}</td>
+            <td>${escapeHtml(row.descripcion ?? row.DESCRIPCION ?? '')}</td>
+            <td>${Number((row.enero ?? row.ENERO) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td>${Number((row.total ?? row.TOTAL) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
+      } else {
+        if (previewHead) {
+          previewHead.innerHTML = '<tr><th>Periodo</th><th>Código</th><th>Nombre cuenta</th><th>Total recalculado</th></tr>';
+        }
+        previewBody.innerHTML = preview.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.periodo ?? row.PERIODO ?? '')}</td>
+            <td>${escapeHtml(row.codigo ?? row.CODIGO ?? '')}</td>
+            <td>${escapeHtml(row.nombre_cuenta ?? row.NOMBRE_CUENTA ?? '')}</td>
+            <td>${Number((row.total_recalculado ?? row.TOTAL_RECALCULADO ?? row.total ?? row.TOTAL) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
       }
-      previewBody.innerHTML = preview.map((row) => `
-        <tr>
-          <td>${escapeHtml(row.periodo ?? row.PERIODO ?? '')}</td>
-          <td>${escapeHtml(row.codigo ?? row.CODIGO ?? '')}</td>
-          <td>${escapeHtml(row.nombre_cuenta ?? row.NOMBRE_CUENTA ?? '')}</td>
-          <td>${Number((row.total_recalculado ?? row.TOTAL_RECALCULADO ?? row.total ?? row.TOTAL) ?? 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="4" class="text-muted">Sin preview.</td></tr>';
     }
 
     function renderDetails() {
@@ -304,7 +318,9 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     }
 
     async function callImport(action, mode) {
-      const endpointUrl = `?r=import-excel&action=${encodeURIComponent(action)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
+      const endpointUrl = tab === 'eeff_reales_eri'
+        ? `?r=import-excel/${action === 'validate' ? 'validar-eeff-reales-eri' : 'importar-eeff-reales-eri'}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`
+        : `?r=import-excel&action=${encodeURIComponent(action)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
       try {
         const fd = buildFormData();
         const controller = new AbortController();

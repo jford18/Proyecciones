@@ -22,6 +22,7 @@ use App\services\ExcelOtrosEgresosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
 use App\services\ExcelProduccionImportService;
+use App\services\ExcelEeffRealesEriImportService;
 use App\services\PgConsolidationService;
 use App\services\WorkflowService;
 use App\repositories\PresupuestoIngresosRepository;
@@ -52,6 +53,7 @@ $excelImportController = new ExcelImportController(
     new ExcelGastosOperacionalesImportService($presupuestoIngresosRepository),
     new ExcelGastosFinancierosImportService($presupuestoIngresosRepository),
     new ExcelProduccionImportService($presupuestoIngresosRepository),
+    new ExcelEeffRealesEriImportService($presupuestoIngresosRepository),
     $presupuestoIngresosRepository
 );
 $anexoController = new AnexoController($anexoRepo);
@@ -93,6 +95,15 @@ function handleImportApi(ExcelImportController $excelImportController, string $e
         }
         if ($endpoint === 'logs' && $method === 'GET') {
             sendJsonResponse($excelImportController->logs((int) ($_GET['limit'] ?? 50)));
+        }
+
+        if ($endpoint === 'validar-eeff-reales-eri' && $method === 'POST') {
+            $_POST['template_id'] = 'eeff_reales_eri';
+            sendJsonResponse($excelImportController->validate($_POST, $_FILES, $user));
+        }
+        if ($endpoint === 'importar-eeff-reales-eri' && $method === 'POST') {
+            $_POST['template_id'] = 'eeff_reales_eri';
+            sendJsonResponse($excelImportController->execute($_POST, $_FILES, $user));
         }
         sendJsonResponse([
             'ok' => false,
