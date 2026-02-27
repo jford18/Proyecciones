@@ -7,6 +7,7 @@ namespace App\services;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ExcelEeffRealesEriImportService
@@ -174,11 +175,23 @@ class ExcelEeffRealesEriImportService
         $rows = [];
         $details = [];
         $totalRows = 0;
+        $descLogs = 0;
 
         for ($rowNum = $headerMap['header_row'] + 1; $rowNum <= $highestRow; $rowNum++) {
             $totalRows++;
             $codigo = trim((string) $this->cellValue($sheet, (int) $headerMap['codigo'], $rowNum, false));
-            $descripcion = trim((string) $this->cellValue($sheet, (int) $headerMap['descripcion'], $rowNum, false));
+            $description = $this->resolveDescriptionValue($sheet, $spreadsheet, (int) $headerMap['descripcion'], $rowNum);
+            $descripcion = $description['resolved'];
+
+            if ($descLogs < 3 && ($codigo !== '' || $descripcion !== '')) {
+                error_log(sprintf(
+                    '[EEFF_REALES_ERI][DESC] codigo=%s raw=%s resolved=%s',
+                    $codigo !== '' ? $codigo : '-',
+                    $description['raw'],
+                    $descripcion
+                ));
+                $descLogs++;
+            }
 
             $item = [
                 'codigo' => $codigo,
@@ -337,6 +350,45 @@ class ExcelEeffRealesEriImportService
         }
 
         return $calculated ? $cell->getCalculatedValue() : $cell->getValue();
+    }
+
+    private function resolveDescriptionValue(Worksheet $sheet, Spreadsheet $spreadsheet, int $col, int $row): array
+    {
+        $addr = Coordinate::stringFromColumnIndex($col) . $row;
+        $cell = $sheet->getCell($addr);
+        if (!$cell) {
+            return ['raw' => '', 'resolved' => ''];
+        }
+
+        $raw = trim((string) $cell->getValue());
+        $resolved = '';
+
+        if ($cell->isFormula()) {
+            $val = $cell->getCalculatedValue();
+            $resolved = trim((string) ($val ?? ''));
+
+            if (is_string($val) && (str_contains($val, "!'") || str_starts_with($val, '='))) {
+                $reference = trim($val);
+                if (preg_match('/^=?\'?([^\']+)\'?\!([$]?[A-Z]+[$]?\d+)$/', $reference, $matches) === 1) {
+                    $sheetName = trim((string) $matches[1]);
+                    $address = strtoupper(str_replace('$', '', trim((string) $matches[2])));
+                    $targetSheet = $spreadsheet->getSheetByName($sheetName);
+                    if ($targetSheet instanceof Worksheet) {
+                        $target = $targetSheet->getCell($address);
+                        $formattedValue = trim((string) $target->getFormattedValue());
+                        if ($formattedValue !== '') {
+                            $resolved = $formattedValue;
+                        } else {
+                            $resolved = trim((string) $target->getCalculatedValue());
+                        }
+                    }
+                }
+            }
+        } else {
+            $resolved = trim((string) $cell->getFormattedValue());
+        }
+
+        return ['raw' => $raw, 'resolved' => $resolved];
     }
 
     private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, array $counts, array $details): string
