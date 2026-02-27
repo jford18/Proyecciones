@@ -728,7 +728,7 @@ class PresupuestoIngresosRepository
 
         $stmt = $this->pdo->prepare('SELECT * FROM IMPORT_LOG WHERE TAB = :tab AND TIPO = :tipo ORDER BY ID DESC LIMIT 1');
         $stmt->execute([
-            'tab' => strtolower(trim($tab)),
+            'tab' => trim($tab),
             'tipo' => trim($tipo),
         ]);
 

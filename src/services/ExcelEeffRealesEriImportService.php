@@ -25,6 +25,15 @@ class ExcelEeffRealesEriImportService
         $parsed = $this->parseSheet($fileTmpPath, $originalFileName, $anioRequest);
         $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $parsed['counts'], $parsed['details']);
 
+        $warnings = array_values(array_filter(
+            $parsed['details'],
+            static fn (array $detail): bool => strtoupper((string) ($detail['severity'] ?? '')) === 'WARNING'
+        ));
+        $errors = array_values(array_filter(
+            $parsed['details'],
+            static fn (array $detail): bool => strtoupper((string) ($detail['severity'] ?? '')) === 'ERROR'
+        ));
+
         $response = [
             'ok' => true,
             'tab' => self::TAB,
@@ -38,8 +47,16 @@ class ExcelEeffRealesEriImportService
             'skipped_count' => (int) ($parsed['counts']['omitted_rows'] ?? 0),
             'warning_count' => (int) ($parsed['counts']['warning_rows'] ?? 0),
             'error_count' => (int) ($parsed['counts']['error_rows'] ?? 0),
+            'summary' => [
+                'total_rows' => (int) ($parsed['counts']['total_rows'] ?? 0),
+                'importables' => (int) ($parsed['counts']['importable_rows'] ?? 0),
+                'warning_rows' => (int) ($parsed['counts']['warning_rows'] ?? 0),
+                'error_rows' => (int) ($parsed['counts']['error_rows'] ?? 0),
+            ],
             'counts' => $parsed['counts'],
             'details' => $parsed['details'],
+            'warnings' => $warnings,
+            'errors' => $errors,
             'preview' => array_slice($parsed['rows'], 0, 50),
             'json_path' => $jsonPath,
             'meta' => ['sheet_name' => $parsed['sheet_name'], 'file_name' => $parsed['file_name']],
