@@ -515,8 +515,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         tdReal.style.minWidth = `${W_NUM}px`;
         tdReal.style.maxWidth = `${W_NUM}px`;
         if (isDetalle) {
-          const realValue = row[`REAL_${month}`] == null ? '' : String(row[`REAL_${month}`]);
-          const status = realSaveState[cellKey(codigo, mes)] || (realValue !== '' ? 'saved' : 'idle');
+          const realRawValue = row[`REAL_${month}`];
+          const realValue = realRawValue == null ? 0 : realRawValue;
+          const status = realSaveState[cellKey(codigo, mes)] || (realRawValue == null ? 'idle' : 'saved');
           tdReal.innerHTML = `
             <div class="eri-real-wrap">
               <input
