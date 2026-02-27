@@ -249,25 +249,68 @@ class ExcelEeffRealesEriImportService
 
     private function resolveHeaderMap(Worksheet $sheet): array
     {
-        $highestRow = min((int) $sheet->getHighestRow(), 25);
+        $highestRow = min((int) $sheet->getHighestRow(), 15);
         $highestCol = Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $requiredMonths = array_fill_keys(self::MONTH_KEYS, true);
+
         for ($row = 1; $row <= $highestRow; $row++) {
             $map = ['header_row' => $row];
             for ($col = 1; $col <= $highestCol; $col++) {
-                $text = strtoupper(trim((string) $this->cellValue($sheet, $col, $row, false)));
-                if ($text === 'CODIGO') { $map['codigo'] = $col; }
-                if (in_array($text, ['DESCRIPCION', 'DESCRIPCIÓN'], true)) { $map['descripcion'] = $col; }
-                foreach (self::MONTH_KEYS as $month) {
-                    if (strtoupper($month) === $text) { $map[$month] = $col; }
+                $normalized = $this->normalizeHeaderValue($this->cellValue($sheet, $col, $row, false));
+                if ($normalized === '' || $normalized === '%') {
+                    continue;
                 }
-                if ($text === 'TOTAL') { $map['total'] = $col; }
+
+                if ($normalized === 'CODIGO') {
+                    $map['codigo'] = $col;
+                    continue;
+                }
+                if ($normalized === 'DESCRIPCION') {
+                    $map['descripcion'] = $col;
+                    continue;
+                }
+                foreach (self::MONTH_KEYS as $month) {
+                    if (strtoupper($month) === $normalized) {
+                        $map[$month] = $col;
+                        continue 2;
+                    }
+                }
+                if ($normalized === 'TOTAL') {
+                    $map['total'] = $col;
+                }
             }
-            if (isset($map['codigo'], $map['descripcion'], $map['enero'], $map['diciembre'])) {
+
+            $foundMonths = array_intersect_key($map, $requiredMonths);
+            if (isset($map['codigo'], $map['descripcion']) && count($foundMonths) >= 1) {
                 return $map;
             }
         }
 
         throw new \RuntimeException('No se encontró encabezado válido para EEFF Reales ERI (CODIGO, DESCRIPCION, ENERO..DICIEMBRE).');
+    }
+
+    private function normalizeHeaderValue(mixed $value): string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '';
+        }
+
+        $withoutAccents = strtr($text, [
+            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+            'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'Á' => 'A', 'À' => 'A', 'Ä' => 'A', 'Â' => 'A',
+            'É' => 'E', 'È' => 'E', 'Ë' => 'E', 'Ê' => 'E',
+            'Í' => 'I', 'Ì' => 'I', 'Ï' => 'I', 'Î' => 'I',
+            'Ó' => 'O', 'Ò' => 'O', 'Ö' => 'O', 'Ô' => 'O',
+            'Ú' => 'U', 'Ù' => 'U', 'Ü' => 'U', 'Û' => 'U',
+            'ñ' => 'n', 'Ñ' => 'N',
+        ]);
+
+        return strtoupper((string) preg_replace('/\s+/', '', $withoutAccents));
     }
 
     private function readNumber(Worksheet $sheet, int $rowNum, ?int $column, array &$details): float
