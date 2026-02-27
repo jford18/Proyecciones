@@ -33,6 +33,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       </div>
       <form id="excelImportForm" enctype="multipart/form-data" class="row g-3">
         <input type="hidden" id="templateId" name="template_id" value="<?= htmlspecialchars((string) $selectedTemplate['id']) ?>">
+        <input type="hidden" id="validatedJsonPath" name="json_path" value="">
         <div class="col-md-8">
           <label class="form-label">Archivo Excel</label>
           <input class="form-control" id="excelFile" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
@@ -146,6 +147,8 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const excelGridTable = document.getElementById('excelGridTable');
     const excelGridHead = excelGridTable ? excelGridTable.querySelector('thead') : null;
     const excelGridBody = excelGridTable ? excelGridTable.querySelector('tbody') : null;
+    const validatedJsonPathInput = document.getElementById('validatedJsonPath');
+    let lastValidatedJsonPath = '';
     let allDetails = [];
     let detailsFilter = 'all';
     let detailsLimit = 200;
@@ -166,6 +169,10 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       fd.append('file', file);
       fd.append('template_id', tab);
       fd.append('tipo', tipo);
+      const persistedJsonPath = (validatedJsonPathInput?.value || lastValidatedJsonPath || '').trim();
+      if (persistedJsonPath !== '') {
+        fd.append('json_path', persistedJsonPath);
+      }
       return fd;
     }
 
@@ -347,6 +354,12 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         if (!response.ok || payload.ok === false) {
           const message = payload?.message || `Error HTTP ${response.status}`;
           throw new Error(`${message}. URL: ${endpointUrl}`);
+        }
+        if (mode === 'validate') {
+          lastValidatedJsonPath = String(payload?.json_path || '').trim();
+          if (validatedJsonPathInput) {
+            validatedJsonPathInput.value = lastValidatedJsonPath;
+          }
         }
         renderResult(payload, mode);
       } catch (error) {
