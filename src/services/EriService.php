@@ -24,7 +24,7 @@ class EriService
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
         ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
-        $importRealByCode = $this->loadImportedReals($periodo, $tipoReal);
+        $realByCode = $this->loadImportedReals($periodo, $tipoReal);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
@@ -34,41 +34,47 @@ class EriService
             $values = $this->zeroMonths();
             $type = (string) $meta['TYPE'];
             $code = $meta['CODE'];
-            if ($type === 'DETAIL' && is_string($code)) {
-                $values = $detailByCode[$code] ?? $values;
-            } elseif ($type === 'SUBTOTAL' && is_string($code)) {
-                $values = $this->subtotalFromDetails($code, $detailByCode);
-            } elseif ($type === 'TOTAL' && is_string($code)) {
-                $values = $this->resolveTotal($code, (string) ($meta['SOURCE_TABLE'] ?? ''), $periodo, (int) ($meta['SIGN'] ?? 1), $detailByCode);
+            $normalizedCode = is_string($code) ? $this->normalizeCodigo($code) : '';
+            if ($type === 'DETAIL' && $normalizedCode !== '') {
+                $values = $detailByCode[$normalizedCode] ?? $values;
+            } elseif ($type === 'SUBTOTAL' && $normalizedCode !== '') {
+                $values = $this->subtotalFromDetails($normalizedCode, $detailByCode);
+            } elseif ($type === 'TOTAL' && $normalizedCode !== '') {
+                $values = $this->resolveTotal($normalizedCode, (string) ($meta['SOURCE_TABLE'] ?? ''), $periodo, (int) ($meta['SIGN'] ?? 1), $detailByCode);
             }
 
             $rowDesc = (string) $meta['DESCRIPCION'];
-            if ($type === 'DETAIL' && is_string($code) && ($descByCode[$code] ?? '') !== '') {
-                $rowDesc = $descByCode[$code];
+            if ($type === 'DETAIL' && $normalizedCode !== '' && ($descByCode[$normalizedCode] ?? '') !== '') {
+                $rowDesc = $descByCode[$normalizedCode];
             }
 
             $row = [
                 'ROW' => (int) $meta['ROW'],
-                'CODE' => $code,
+                'CODE' => is_string($code) ? $normalizedCode : $code,
                 'DESCRIPCION' => $rowDesc,
                 'TYPE' => $type,
             ] + $values;
 
             $realValues = $this->zeroRealMonths();
-            if ($type === 'DETAIL' && is_string($code) && $code !== '' && isset($importRealByCode[$code])) {
-                $real = $importRealByCode[$code];
+            if ($type === 'DETAIL' && $normalizedCode !== '' && isset($realByCode[$normalizedCode])) {
+                $real = $realByCode[$normalizedCode];
                 foreach (self::MONTHS as $month) {
                     $realValues['REAL_' . $month] = (float) ($real[$month] ?? 0.0);
                 }
                 $realValues['REAL_TOTAL'] = (float) ($real['TOTAL'] ?? 0.0);
                 $matchedRealRows++;
             }
+            if ($type === 'DETAIL' && $normalizedCode !== '') {
+                error_log('[ERI_MATCH] codigo=' . $normalizedCode
+                    . ' base=' . json_encode($detailByCode[$normalizedCode] ?? [])
+                    . ' real=' . json_encode($realByCode[$normalizedCode] ?? []));
+            }
             $row = array_merge($row, $realValues);
 
             $rows[] = $row;
             $rowsByRow[(int) $row['ROW']] = $row;
-            if (is_string($code) && $code !== '') {
-                $rowsByCode[$code] = $values;
+            if ($normalizedCode !== '') {
+                $rowsByCode[$normalizedCode] = $values;
             }
         }
 
@@ -93,7 +99,7 @@ class EriService
         }
         unset($row);
 
-        $this->logRealSampleDebug($periodo, $importRealByCode);
+        $this->logRealSampleDebug($periodo, $realByCode);
         error_log(sprintf('[ERI][REAL] anio=%d tipo=%s rows=%d match_real=%d', $periodo, strtoupper(trim($tipoReal)), count($rows), $matchedRealRows));
 
         return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
@@ -216,8 +222,12 @@ class EriService
             if ($table === '' || $code === '') {
                 continue;
             }
-            $byTableCodes[$table][] = $code;
-            $signByCode[$code] = (int) ($meta['SIGN'] ?? 1);
+            $normalizedCode = $this->normalizeCodigo($code);
+            if ($normalizedCode === '') {
+                continue;
+            }
+            $byTableCodes[$table][] = $normalizedCode;
+            $signByCode[$normalizedCode] = (int) ($meta['SIGN'] ?? 1);
         }
 
         $detail = [];
@@ -250,13 +260,13 @@ class EriService
         $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(A.' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS));
         $sql = "SELECT TRIM(CAST(A.CODIGO AS CHAR)) AS CODIGO, COALESCE(A.NOMBRE_CUENTA, '') AS DESCRIPCION, {$monthSelect}\n"
             . "FROM {$table} A\n"
-            . "WHERE A.ANIO = ? AND A.CODIGO IN ({$placeholders})";
+            . "WHERE A.ANIO = ? AND TRIM(CAST(A.CODIGO AS CHAR)) IN ({$placeholders})";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute(array_merge([$periodo], $codes));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $out = [];
         foreach ($rows as $row) {
-            $code = (string) ($row['CODIGO'] ?? '');
+            $code = $this->normalizeCodigo((string) ($row['CODIGO'] ?? ''));
             if ($code === '') {
                 continue;
             }
@@ -292,7 +302,7 @@ class EriService
 
         $out = [];
         foreach ($rows as $row) {
-            $code = trim((string) ($row['CODIGO'] ?? ''));
+            $code = $this->normalizeCodigo((string) ($row['CODIGO'] ?? ''));
             if ($code === '') {
                 continue;
             }
@@ -303,6 +313,12 @@ class EriService
         }
 
         return $out;
+    }
+
+
+    private function normalizeCodigo(string $codigo): string
+    {
+        return trim((string) $codigo);
     }
 
     private function subtotalFromDetails(string $prefix, array $detailByCode): array
