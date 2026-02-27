@@ -23,8 +23,7 @@ class EriService
         $template = $this->buildTemplate();
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
-        ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
-        $realByCode = $this->loadImportedRealByCode($periodo, $tipoReal);
+        ['values' => $detailByCode, 'descriptions' => $descByCode, 'real' => $realByCode] = $this->loadDetails($periodo, $template, $tipoReal);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
@@ -89,7 +88,8 @@ class EriService
         }
         unset($row);
 
-        error_log(sprintf('[ERI][REAL] anio=%d rows=%d match_real=%d', $periodo, count($rows), $matchedRealRows));
+        $this->logRealSampleDebug($periodo, $tipoReal, $detailByCode, $realByCode);
+        error_log(sprintf('[ERI][REAL] anio=%d tipo=%s rows=%d match_real=%d', $periodo, strtoupper(trim($tipoReal)), count($rows), $matchedRealRows));
 
         return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
     }
@@ -198,7 +198,7 @@ class EriService
         $rows[] = ['ROW' => $row, 'CODE' => $subtotalCode, 'DESCRIPCION' => $subtotalDesc, 'TYPE' => 'SUBTOTAL', 'SOURCE_TABLE' => $sourceTable, 'SIGN' => $sign];
     }
 
-    private function loadDetails(int $periodo, array $template): array
+    private function loadDetails(int $periodo, array $template, string $tipoReal): array
     {
         $byTableCodes = [];
         $signByCode = [];
@@ -217,8 +217,9 @@ class EriService
 
         $detail = [];
         $descByCode = [];
+        $realByCode = [];
         foreach ($byTableCodes as $table => $codes) {
-            $data = $this->queryDetailTable($table, $periodo, array_values(array_unique($codes)));
+            $data = $this->queryDetailTable($table, $periodo, array_values(array_unique($codes)), $tipoReal);
             foreach ($data as $code => $dataRow) {
                 $values = $this->zeroMonths();
                 $sign = $signByCode[$code] ?? 1;
@@ -227,25 +228,38 @@ class EriService
                 }
                 $detail[$code] = $values;
                 $descByCode[$code] = trim((string) ($dataRow['DESCRIPCION'] ?? ''));
+
+                $realByCode[$code] = $this->zeroRealMonths();
+                foreach (self::MONTHS as $month) {
+                    $realByCode[$code]['REAL_' . $month] = (float) ($dataRow['REAL_' . $month] ?? 0.0);
+                }
+                $realByCode[$code]['REAL_TOTAL'] = (float) ($dataRow['REAL_TOTAL'] ?? 0.0);
             }
             foreach ($codes as $code) {
                 $detail[$code] ??= $this->zeroMonths();
+                $realByCode[$code] ??= $this->zeroRealMonths();
             }
         }
 
-        return ['values' => $detail, 'descriptions' => $descByCode];
+        return ['values' => $detail, 'descriptions' => $descByCode, 'real' => $realByCode];
     }
 
-    private function queryDetailTable(string $table, int $periodo, array $codes): array
+    private function queryDetailTable(string $table, int $periodo, array $codes, string $tipoReal): array
     {
         if ($codes === []) {
             return [];
         }
         $placeholders = implode(',', array_fill(0, count($codes), '?'));
-        $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS));
-        $sql = "SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS DESCRIPCION, {$monthSelect} FROM {$table} WHERE ANIO = ? AND CODIGO IN ({$placeholders})";
+        $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(A.' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS));
+        $realSelect = implode(', ', array_map(fn($m) => 'COALESCE(B.' . $m . ', 0) AS REAL_' . $m, self::MONTHS));
+        $sql = "SELECT TRIM(CAST(A.CODIGO AS CHAR)) AS CODIGO, COALESCE(A.NOMBRE_CUENTA, '') AS DESCRIPCION, {$monthSelect}, {$realSelect}, COALESCE(B.TOTAL, 0) AS REAL_TOTAL\n"
+            . "FROM {$table} A\n"
+            . 'LEFT JOIN EEFF_REALES_ERI_IMPORT B ON B.ANIO = ? '
+            . 'AND TRIM(CAST(B.CODIGO AS CHAR)) = TRIM(CAST(A.CODIGO AS CHAR)) '
+            . 'AND UPPER(TRIM(COALESCE(B.TIPO, ""))) = ? '
+            . "WHERE A.ANIO = ? AND A.CODIGO IN ({$placeholders})";
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute(array_merge([$periodo], $codes));
+        $stmt->execute(array_merge([$periodo, strtoupper(trim($tipoReal)), $periodo], $codes));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $out = [];
         foreach ($rows as $row) {
@@ -256,7 +270,9 @@ class EriService
             $out[$code] = ['DESCRIPCION' => (string) ($row['DESCRIPCION'] ?? '')];
             foreach (self::MONTHS as $month) {
                 $out[$code][$month] = (float) ($row[$month] ?? 0.0);
+                $out[$code]['REAL_' . $month] = (float) ($row['REAL_' . $month] ?? 0.0);
             }
+            $out[$code]['REAL_TOTAL'] = (float) ($row['REAL_TOTAL'] ?? 0.0);
         }
 
         return $out;
@@ -435,37 +451,21 @@ class EriService
         return $row;
     }
 
-    private function loadImportedRealByCode(int $periodo, string $tipoReal): array
+    private function logRealSampleDebug(int $periodo, string $tipoReal, array $detailByCode, array $realByCode): void
     {
-        $monthSelect = implode(', ', self::MONTHS);
-        $sql = "SELECT CODIGO, {$monthSelect}, TOTAL FROM EEFF_REALES_ERI_IMPORT WHERE ANIO = :anio";
-        $params = ['anio' => $periodo];
-        $tipo = strtoupper(trim($tipoReal));
-        if ($tipo !== '') {
-            $sql .= ' AND UPPER(COALESCE(TIPO, "")) = :tipo';
-            $params['tipo'] = $tipo;
+        $sampleCodes = ['4010101', '4010102', '4010103'];
+        foreach ($sampleCodes as $code) {
+            $baseEnero = (float) ($detailByCode[$code]['ENERO'] ?? 0.0);
+            $realEnero = (float) ($realByCode[$code]['REAL_ENERO'] ?? 0.0);
+            error_log(sprintf(
+                '[ERI][REAL_DEBUG] anio=%d tipo=%s codigo=%s valor_base=%s real_enero=%s',
+                $periodo,
+                strtoupper(trim($tipoReal)),
+                $code,
+                (string) $baseEnero,
+                (string) $realEnero
+            ));
         }
-
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $out = [];
-        foreach ($rows as $row) {
-            $code = trim((string) ($row['CODIGO'] ?? ''));
-            if ($code === '') {
-                continue;
-            }
-
-            $real = $this->zeroRealMonths();
-            foreach (self::MONTHS as $month) {
-                $real['REAL_' . $month] = (float) ($row[$month] ?? 0.0);
-            }
-            $real['REAL_TOTAL'] = (float) ($row['TOTAL'] ?? 0.0);
-            $out[$code] = $real;
-        }
-
-        return $out;
     }
 
     private function emptyRow(int $rowNumber, ?string $code, string $desc, string $type): array
