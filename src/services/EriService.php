@@ -283,21 +283,34 @@ class EriService
     {
         $tipoNormalized = strtoupper(trim($tipoReal));
         $monthSelect = implode(', ', array_map(function (string $month): string {
-            return 'COALESCE('
-                . 'MAX(CASE WHEN UPPER(TRIM(TIPO)) = ? THEN ' . $month . ' END), '
-                . 'MAX(' . $month . ')'
-                . ') AS ' . $month;
+            return 'COALESCE(B.' . $month . ', C.' . $month . ', 0) AS ' . $month;
         }, self::MONTHS));
-        $sql = "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelect}, "
-            . 'COALESCE(MAX(CASE WHEN UPPER(TRIM(TIPO)) = ? THEN TOTAL END), MAX(TOTAL)) AS TOTAL '
+        $monthSelectByType = implode(', ', array_map(function (string $month): string {
+            return 'MAX(COALESCE(' . $month . ', 0)) AS ' . $month;
+        }, self::MONTHS));
+
+        $sql = "SELECT A.CODIGO, {$monthSelect}, COALESCE(B.TOTAL, C.TOTAL, 0) AS TOTAL "
+            . 'FROM ( '
+            . 'SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO '
             . 'FROM eeff_reales_eri_import '
             . 'WHERE ANIO = ? '
-            . 'GROUP BY ANIO, TRIM(CAST(CODIGO AS CHAR))';
+            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
+            . ') A '
+            . 'LEFT JOIN ( '
+            . "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelectByType}, MAX(COALESCE(TOTAL, 0)) AS TOTAL "
+            . 'FROM eeff_reales_eri_import '
+            . 'WHERE ANIO = ? AND UPPER(TRIM(COALESCE(TIPO, ""))) = ? '
+            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
+            . ') B ON TRIM(CAST(B.CODIGO AS CHAR)) = TRIM(CAST(A.CODIGO AS CHAR)) '
+            . 'LEFT JOIN ( '
+            . "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelectByType}, MAX(COALESCE(TOTAL, 0)) AS TOTAL "
+            . 'FROM eeff_reales_eri_import '
+            . 'WHERE ANIO = ? AND UPPER(TRIM(COALESCE(TIPO, ""))) = "PRESUPUESTO" '
+            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
+            . ') C ON TRIM(CAST(C.CODIGO AS CHAR)) = TRIM(CAST(A.CODIGO AS CHAR))';
 
         $stmt = $this->pdo->prepare($sql);
-        $params = array_fill(0, count(self::MONTHS) + 1, $tipoNormalized);
-        $params[] = $periodo;
-        $stmt->execute($params);
+        $stmt->execute([$periodo, $periodo, $tipoNormalized, $periodo]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $out = [];
