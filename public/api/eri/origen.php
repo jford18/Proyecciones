@@ -68,27 +68,38 @@ function handleEriReal(PDO $pdo): never
     $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     if ($op === 'LIST') {
-        $periodoMes = filter_input(INPUT_GET, 'periodo_mes', FILTER_VALIDATE_INT);
-        if ($periodoMes === false || $periodoMes === null || !preg_match('/^\d{6}$/', (string) $periodoMes)) {
-            jsonResponse(['ok' => false, 'error' => 'periodo_mes es requerido con formato YYYYMM.'], 422);
+        $anio = filter_input(INPUT_GET, 'anio', FILTER_VALIDATE_INT);
+        $tipo = strtoupper(trim((string) ($_GET['tipo'] ?? 'REAL')));
+        if ($anio === false || $anio === null || $anio < 1900 || $anio > 3000) {
+            jsonResponse(['ok' => false, 'error' => 'anio es requerido y debe ser válido.'], 422);
         }
 
         $stmt = $pdo->prepare(
-            'SELECT CODIGO AS codigo, MES AS mes, VALOR_REAL AS valor_real
-             FROM ERI_REAL_VALOR
-             WHERE PERIODO_MES = :periodo_mes
-             ORDER BY CODIGO, MES'
+            'SELECT CODIGO, ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE
+             FROM EEFF_REALES_ERI_IMPORT
+             WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo
+             ORDER BY CODIGO'
         );
-        $stmt->execute(['periodo_mes' => $periodoMes]);
+        $stmt->execute(['anio' => $anio, 'tipo' => $tipo]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-        jsonResponse(['ok' => true, 'data' => array_map(static function (array $row): array {
-            return [
-                'codigo' => (string) ($row['codigo'] ?? ''),
-                'mes' => (int) ($row['mes'] ?? 0),
-                'valor_real' => $row['valor_real'] === null ? null : (float) $row['valor_real'],
-            ];
-        }, $rows)]);
+        $data = [];
+        $months = [1 => 'ENERO', 2 => 'FEBRERO', 3 => 'MARZO', 4 => 'ABRIL', 5 => 'MAYO', 6 => 'JUNIO', 7 => 'JULIO', 8 => 'AGOSTO', 9 => 'SEPTIEMBRE', 10 => 'OCTUBRE', 11 => 'NOVIEMBRE', 12 => 'DICIEMBRE'];
+        foreach ($rows as $row) {
+            $codigo = (string) ($row['CODIGO'] ?? '');
+            if ($codigo === '') {
+                continue;
+            }
+            foreach ($months as $mes => $column) {
+                $data[] = [
+                    'codigo' => $codigo,
+                    'mes' => $mes,
+                    'valor_real' => isset($row[$column]) ? (float) $row[$column] : 0.0,
+                ];
+            }
+        }
+
+        jsonResponse(['ok' => true, 'data' => $data]);
     }
 
     if ($op === 'UPSERT') {
@@ -102,13 +113,14 @@ function handleEriReal(PDO $pdo): never
             jsonResponse(['ok' => false, 'error' => 'JSON inválido.'], 400);
         }
 
-        $periodoMes = filter_var($payload['periodo_mes'] ?? null, FILTER_VALIDATE_INT);
+        $anio = filter_var($payload['anio'] ?? null, FILTER_VALIDATE_INT);
+        $tipo = strtoupper(trim((string) ($payload['tipo'] ?? 'REAL')));
         $mes = filter_var($payload['mes'] ?? null, FILTER_VALIDATE_INT);
         $codigo = trim((string) ($payload['codigo'] ?? ''));
         $descripcion = trim((string) ($payload['descripcion'] ?? ''));
 
-        if ($periodoMes === false || $periodoMes === null || !preg_match('/^\d{6}$/', (string) $periodoMes)) {
-            jsonResponse(['ok' => false, 'error' => 'periodo_mes es requerido con formato YYYYMM.'], 422);
+        if ($anio === false || $anio === null || $anio < 1900 || $anio > 3000) {
+            jsonResponse(['ok' => false, 'error' => 'anio es requerido y debe ser válido.'], 422);
         }
         if ($codigo === '') {
             jsonResponse(['ok' => false, 'error' => 'codigo es requerido.'], 422);
@@ -118,28 +130,72 @@ function handleEriReal(PDO $pdo): never
         }
 
         try {
-            $valorReal = normalizeRealValue($payload['valor_real'] ?? null);
+            $valorReal = normalizeRealValue($payload['valor'] ?? null);
         } catch (InvalidArgumentException $e) {
             jsonResponse(['ok' => false, 'error' => $e->getMessage()], 422);
         }
 
-        $sql = 'INSERT INTO ERI_REAL_VALOR (PERIODO_MES, MES, CODIGO, DESCRIPCION, VALOR_REAL)
-                VALUES (:periodo_mes, :mes, :codigo, :descripcion, :valor_real)
-                ON DUPLICATE KEY UPDATE
-                  DESCRIPCION = VALUES(DESCRIPCION),
-                  VALOR_REAL = VALUES(VALOR_REAL)';
-        $stmt = $pdo->prepare($sql);
-        $stmt->bindValue(':periodo_mes', (int) $periodoMes, PDO::PARAM_INT);
-        $stmt->bindValue(':mes', (int) $mes, PDO::PARAM_INT);
-        $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
-        $stmt->bindValue(':descripcion', $descripcion, PDO::PARAM_STR);
-        if ($valorReal === null) {
-            $stmt->bindValue(':valor_real', null, PDO::PARAM_NULL);
-        } else {
-            $stmt->bindValue(':valor_real', $valorReal);
+        $monthColumns = [1 => 'ENERO', 2 => 'FEBRERO', 3 => 'MARZO', 4 => 'ABRIL', 5 => 'MAYO', 6 => 'JUNIO', 7 => 'JULIO', 8 => 'AGOSTO', 9 => 'SEPTIEMBRE', 10 => 'OCTUBRE', 11 => 'NOVIEMBRE', 12 => 'DICIEMBRE'];
+        $monthColumn = $monthColumns[$mes] ?? null;
+        if ($monthColumn === null) {
+            jsonResponse(['ok' => false, 'error' => 'mes debe estar entre 1 y 12.'], 422);
         }
-        $stmt->execute();
 
+        $checkStmt = $pdo->prepare('SELECT 1 FROM EEFF_REALES_ERI_IMPORT WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo LIMIT 1');
+        $checkStmt->execute(['anio' => $anio, 'tipo' => $tipo, 'codigo' => $codigo]);
+        $exists = $checkStmt->fetchColumn() !== false;
+
+        if ($exists) {
+            $sql = sprintf('UPDATE EEFF_REALES_ERI_IMPORT SET %s = :valor, TOTAL = COALESCE(ENERO,0)+COALESCE(FEBRERO,0)+COALESCE(MARZO,0)+COALESCE(ABRIL,0)+COALESCE(MAYO,0)+COALESCE(JUNIO,0)+COALESCE(JULIO,0)+COALESCE(AGOSTO,0)+COALESCE(SEPTIEMBRE,0)+COALESCE(OCTUBRE,0)+COALESCE(NOVIEMBRE,0)+COALESCE(DICIEMBRE,0) WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo', $monthColumn);
+            $stmt = $pdo->prepare($sql);
+            if ($valorReal === null) {
+                $stmt->bindValue(':valor', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':valor', $valorReal);
+            }
+            $stmt->bindValue(':anio', (int) $anio, PDO::PARAM_INT);
+            $stmt->bindValue(':tipo', $tipo, PDO::PARAM_STR);
+            $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
+            $stmt->execute();
+        } else {
+            $insertColumns = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+            $insertData = array_fill_keys($insertColumns, 0.0);
+            $insertData[$monthColumn] = $valorReal;
+
+            $sql = 'INSERT INTO EEFF_REALES_ERI_IMPORT (
+                        ANIO, TIPO, CODIGO, DESCRIPCION,
+                        ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE,
+                        TOTAL, ORIGEN_ARCHIVO, ORIGEN_HOJA, ORIGEN_FILA
+                    ) VALUES (
+                        :anio, :tipo, :codigo, :descripcion,
+                        :ENERO, :FEBRERO, :MARZO, :ABRIL, :MAYO, :JUNIO, :JULIO, :AGOSTO, :SEPTIEMBRE, :OCTUBRE, :NOVIEMBRE, :DICIEMBRE,
+                        :total, :origen_archivo, :origen_hoja, :origen_fila
+                    )';
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(':anio', (int) $anio, PDO::PARAM_INT);
+            $stmt->bindValue(':tipo', $tipo, PDO::PARAM_STR);
+            $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
+            $stmt->bindValue(':descripcion', $descripcion, PDO::PARAM_STR);
+            foreach ($insertColumns as $column) {
+                $value = $insertData[$column];
+                if ($value === null) {
+                    $stmt->bindValue(':' . $column, null, PDO::PARAM_NULL);
+                } else {
+                    $stmt->bindValue(':' . $column, (float) $value);
+                }
+            }
+            $total = 0.0;
+            foreach ($insertColumns as $column) {
+                $total += (float) ($insertData[$column] ?? 0.0);
+            }
+            $stmt->bindValue(':total', $total);
+            $stmt->bindValue(':origen_archivo', 'MANUAL', PDO::PARAM_STR);
+            $stmt->bindValue(':origen_hoja', 'ERI_UI', PDO::PARAM_STR);
+            $stmt->bindValue(':origen_fila', 0, PDO::PARAM_INT);
+            $stmt->execute();
+        }
+
+        error_log(sprintf('[ERI][REAL_SAVE] anio=%d codigo=%s mes=%d valor=%s', (int) $anio, $codigo, (int) $mes, (string) ($valorReal ?? 'null')));
         jsonResponse(['ok' => true]);
     }
 
