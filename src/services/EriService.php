@@ -56,13 +56,20 @@ class EriService
             ] + $values;
 
             $realValues = $this->zeroRealMonths();
-            if ($type === 'DETAIL' && $normalizedCode !== '' && isset($realByCode[$normalizedCode])) {
-                $real = $realByCode[$normalizedCode];
+            $normalizedRealCode = is_string($code) ? $this->normalizeCodigoDigits($code) : '';
+            $real = null;
+            if ($type === 'DETAIL' && $normalizedRealCode !== '') {
+                $real = $realByCode[$normalizedRealCode] ?? null;
+            }
+            if ($type === 'DETAIL' && $real) {
                 foreach (self::MONTHS as $month) {
-                    $realValues['REAL_' . $month] = (float) ($real[$month] ?? 0.0);
+                    $realValues['REAL_' . $month] = (float) ($real['REAL_' . $month] ?? 0.0);
                 }
-                $realValues['REAL_TOTAL'] = (float) ($real['TOTAL'] ?? 0.0);
+                $realValues['REAL_TOTAL'] = (float) ($real['REAL_TOTAL'] ?? 0.0);
                 $matchedRealRows++;
+            }
+            if ($normalizedRealCode === '4010101') {
+                error_log('[REAL_ROW] code_raw=' . bin2hex((string) $code) . ' norm=' . $normalizedRealCode . ' hasReal=' . (isset($realByCode[$normalizedRealCode]) ? '1' : '0'));
             }
             if ($type === 'DETAIL' && $normalizedCode !== '') {
                 error_log('[ERI_MATCH] codigo=' . $normalizedCode
@@ -281,47 +288,27 @@ class EriService
 
     private function loadImportedReals(int $periodo, string $tipoReal): array
     {
-        $tipoNormalized = strtoupper(trim($tipoReal));
-        $monthSelect = implode(', ', array_map(function (string $month): string {
-            return 'COALESCE(B.' . $month . ', C.' . $month . ', 0) AS ' . $month;
-        }, self::MONTHS));
-        $monthSelectByType = implode(', ', array_map(function (string $month): string {
-            return 'MAX(COALESCE(' . $month . ', 0)) AS ' . $month;
-        }, self::MONTHS));
-
-        $sql = "SELECT A.CODIGO, {$monthSelect}, COALESCE(B.TOTAL, C.TOTAL, 0) AS TOTAL "
-            . 'FROM ( '
-            . 'SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO '
+        $sql = 'SELECT ANIO, CODIGO, ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE, TOTAL '
             . 'FROM eeff_reales_eri_import '
-            . 'WHERE ANIO = ? '
-            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
-            . ') A '
-            . 'LEFT JOIN ( '
-            . "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelectByType}, MAX(COALESCE(TOTAL, 0)) AS TOTAL "
-            . 'FROM eeff_reales_eri_import '
-            . 'WHERE ANIO = ? AND UPPER(TRIM(COALESCE(TIPO, ""))) = ? '
-            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
-            . ') B ON TRIM(CAST(B.CODIGO AS CHAR)) = TRIM(CAST(A.CODIGO AS CHAR)) '
-            . 'LEFT JOIN ( '
-            . "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelectByType}, MAX(COALESCE(TOTAL, 0)) AS TOTAL "
-            . 'FROM eeff_reales_eri_import '
-            . 'WHERE ANIO = ? AND UPPER(TRIM(COALESCE(TIPO, ""))) = "PRESUPUESTO" '
-            . 'GROUP BY TRIM(CAST(CODIGO AS CHAR)) '
-            . ') C ON TRIM(CAST(C.CODIGO AS CHAR)) = TRIM(CAST(A.CODIGO AS CHAR))';
+            . 'WHERE ANIO = ?';
 
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([$periodo, $periodo, $tipoNormalized, $periodo]);
+        $stmt->execute([$periodo]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $out = [];
         foreach ($rows as $row) {
-            $code = $this->normalizeCodigo((string) ($row['CODIGO'] ?? ''));
-            if ($code === '') {
+            $norm = $this->normalizeCodigoDigits((string) ($row['CODIGO'] ?? ''));
+            if ($norm === '') {
                 continue;
             }
-            $out[$code] = ['TOTAL' => (float) ($row['TOTAL'] ?? 0.0)];
+            $out[$norm] = [];
             foreach (self::MONTHS as $month) {
-                $out[$code][$month] = (float) ($row[$month] ?? 0.0);
+                $out[$norm]['REAL_' . $month] = (float) ($row[$month] ?? 0.0);
+            }
+            $out[$norm]['REAL_TOTAL'] = (float) ($row['TOTAL'] ?? 0.0);
+            if ($norm === '4010101') {
+                error_log('[REAL_MAP] raw=' . bin2hex((string) ($row['CODIGO'] ?? '')) . ' norm=' . $norm . ' ene=' . (string) ($row['ENERO'] ?? '0'));
             }
         }
 
@@ -332,6 +319,11 @@ class EriService
     private function normalizeCodigo(string $codigo): string
     {
         return trim((string) $codigo);
+    }
+
+    private function normalizeCodigoDigits(string $codigo): string
+    {
+        return preg_replace('/\D+/', '', (string) $codigo) ?? '';
     }
 
     private function subtotalFromDetails(string $prefix, array $detailByCode): array
