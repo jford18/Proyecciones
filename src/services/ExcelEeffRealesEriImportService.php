@@ -10,7 +10,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ExcelEeffRealesEriImportService
 {
-    private const TAB = 'EEFF_REALES_ERI';
+    private const TAB_KEY = 'eeff_reales_eri';
+    private const TAB_LOG = 'EEFF_REALES_ERI';
     private const TARGET_TABLE = 'EEFF_REALES_ERI_IMPORT';
     private const SHEET_NAME = 'ERI';
     private const MONTH_KEYS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -36,7 +37,7 @@ class ExcelEeffRealesEriImportService
 
         $response = [
             'ok' => true,
-            'tab' => self::TAB,
+            'tab' => self::TAB_KEY,
             'tipo' => $tipo,
             'target_table' => self::TARGET_TABLE,
             'sheet_name' => $parsed['sheet_name'],
@@ -64,14 +65,28 @@ class ExcelEeffRealesEriImportService
             'timestamp' => date('c'),
         ];
 
-        $this->repository->insertImportLog($response + ['usuario' => 'validate']);
+        $this->repository->insertImportLog($response + ['tab' => self::TAB_LOG, 'usuario' => 'validate']);
+        error_log(sprintf(
+            '[EEFF_REALES_ERI][VALIDAR] TAB_KEY=%s, TAB_LOG=%s, TIPO=%s, JSON_PATH=%s',
+            self::TAB_KEY,
+            self::TAB_LOG,
+            $tipo,
+            $jsonPath
+        ));
 
         return $response;
     }
 
     public function executeFromValidatedJson(string $tipo, string $usuario, ?int $anioRequest, ?int $proyectoId = null): array
     {
-        $latest = $this->repository->findLatestImportLogByTabTipo(self::TAB, $tipo);
+        $latest = $this->repository->findLatestImportLogByTabTipo(self::TAB_LOG, $tipo);
+        error_log(sprintf(
+            '[EEFF_REALES_ERI][IMPORTAR] buscando TAB_LOG=%s, TIPO=%s, encontrado=%s, JSON_PATH=%s',
+            self::TAB_LOG,
+            $tipo,
+            is_array($latest) ? 'SI' : 'NO',
+            is_array($latest) ? (string) ($latest['JSON_PATH'] ?? $latest['json_path'] ?? '') : ''
+        ));
         if (!is_array($latest)) {
             throw new \RuntimeException('No existe validación previa para EEFF Reales ERI. Debe validar primero.');
         }
@@ -116,7 +131,7 @@ class ExcelEeffRealesEriImportService
 
         $response = [
             'ok' => true,
-            'tab' => self::TAB,
+            'tab' => self::TAB_KEY,
             'tipo' => $tipo,
             'target_table' => self::TARGET_TABLE,
             'file_name' => $fileName,
@@ -136,7 +151,7 @@ class ExcelEeffRealesEriImportService
             'timestamp' => date('c'),
         ];
 
-        $this->repository->insertImportLog($response + ['usuario' => $usuario]);
+        $this->repository->insertImportLog($response + ['tab' => self::TAB_LOG, 'usuario' => $usuario]);
 
         return $response;
     }
@@ -279,7 +294,7 @@ class ExcelEeffRealesEriImportService
         }
 
         file_put_contents($absolutePath, json_encode([
-            'tab' => self::TAB,
+            'tab' => self::TAB_KEY,
             'tipo' => $tipo,
             'anio' => $anio,
             'sheet_name' => $sheetName,
