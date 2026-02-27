@@ -24,7 +24,7 @@ class EriService
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
         ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
-        $importRealByCode = $this->loadImportedReals($periodo);
+        $importRealByCode = $this->loadImportedReals($periodo, $tipoReal);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
@@ -269,15 +269,25 @@ class EriService
         return $out;
     }
 
-    private function loadImportedReals(int $periodo): array
+    private function loadImportedReals(int $periodo, string $tipoReal): array
     {
-        $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(' . $m . ', 0) AS ' . $m, self::MONTHS));
-        $sql = "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelect}, COALESCE(TOTAL, 0) AS TOTAL\n"
+        $tipoNormalized = strtoupper(trim($tipoReal));
+        $monthSelect = implode(', ', array_map(function (string $month): string {
+            return 'COALESCE('
+                . 'MAX(CASE WHEN UPPER(TRIM(TIPO)) = ? THEN ' . $month . ' END), '
+                . 'MAX(' . $month . ')'
+                . ') AS ' . $month;
+        }, self::MONTHS));
+        $sql = "SELECT TRIM(CAST(CODIGO AS CHAR)) AS CODIGO, {$monthSelect}, "
+            . 'COALESCE(MAX(CASE WHEN UPPER(TRIM(TIPO)) = ? THEN TOTAL END), MAX(TOTAL)) AS TOTAL '
             . 'FROM eeff_reales_eri_import '
-            . 'WHERE ANIO = ?';
+            . 'WHERE ANIO = ? '
+            . 'GROUP BY ANIO, TRIM(CAST(CODIGO AS CHAR))';
 
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([$periodo]);
+        $params = array_fill(0, count(self::MONTHS) + 1, $tipoNormalized);
+        $params[] = $periodo;
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $out = [];
