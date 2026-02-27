@@ -35,6 +35,7 @@ class ImportTemplateCatalog
             ['id' => 'otros_ingresos', 'label' => 'Otros ingresos', 'sheet_name' => '5.- Otros ingresos', 'columns' => self::FIXED_HEADER],
             ['id' => 'otros_egresos', 'label' => 'Otros egresos', 'sheet_name' => '6.- Otros egresos', 'columns' => self::FIXED_HEADER],
             ['id' => 'produccion', 'label' => 'Produccion', 'sheet_name' => '7.-Produccion', 'columns' => self::FIXED_HEADER],
+            ['id' => 'eeff_reales_eri', 'label' => 'EEFF Reales ERI', 'sheet_name' => 'X.- EEFF Reales ERI', 'columns' => ['CODIGO','DESCRIPCION','ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE','TOTAL']],
         ];
     }
 

@@ -13,6 +13,7 @@ use App\services\ExcelOtrosEgresosImportService;
 use App\services\ExcelGastosOperacionalesImportService;
 use App\services\ExcelGastosFinancierosImportService;
 use App\services\ExcelProduccionImportService;
+use App\services\ExcelEeffRealesEriImportService;
 use App\services\ImportTemplateCatalog;
 use App\repositories\PresupuestoIngresosRepository;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -34,6 +35,7 @@ class ExcelImportController
         private ?ExcelGastosOperacionalesImportService $gastosOperacionalesService = null,
         private ?ExcelGastosFinancierosImportService $gastosFinancierosService = null,
         private ?ExcelProduccionImportService $produccionService = null,
+        private ?ExcelEeffRealesEriImportService $eeffRealesEriService = null,
         private ?PresupuestoIngresosRepository $presupuestoIngresosRepository = null
     ) {
     }
@@ -227,7 +229,7 @@ class ExcelImportController
         }
 
         $tab = strtolower((string) ($_GET['tab'] ?? ''));
-        if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion'], true)) {
+        if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion', 'eeff_reales_eri'], true)) {
             $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
         }
 
@@ -261,7 +263,7 @@ class ExcelImportController
 
         try {
             $tab = strtolower((string) ($_GET['tab'] ?? 'ingresos'));
-            if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion'], true)) {
+            if (!in_array($tab, ['ingresos', 'costos', 'otros_ingresos', 'otros_egresos', 'gastos_operacionales', 'gastos_financieros', 'produccion', 'eeff_reales_eri'], true)) {
                 $this->respondJson(['ok' => false, 'message' => 'Tab no soportado.'], 400);
             }
 
@@ -282,6 +284,7 @@ class ExcelImportController
                 'gastos_operacionales' => 'Gastos operacionales',
                 'gastos_financieros' => 'Gastos financieros',
                 'produccion' => 'Produccion',
+                'eeff_reales_eri' => 'EEFF Reales ERI',
                 default => 'Ingresos',
             });
 
@@ -334,6 +337,10 @@ class ExcelImportController
 
     private function ingresosGridColumns(string $tab = 'ingresos'): array
     {
+        if ($tab === 'eeff_reales_eri') {
+            return ['CODIGO', 'DESCRIPCION', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE', 'TOTAL'];
+        }
+
         return ['PERIODO', 'CODIGO', 'NOMBRE_CUENTA', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'TOTAL', 'TOTAL_RECALCULADO'];
     }
 
@@ -383,6 +390,9 @@ class ExcelImportController
             $result['target_table'] = $result['target_table'] ?? 'PRESUPUESTO_PRODUCCION';
             $result['json_path'] = $result['json_path'] ?? null;
             return $result;
+        }
+        if (($template['id'] ?? '') === 'eeff_reales_eri' && $this->eeffRealesEriService instanceof ExcelEeffRealesEriImportService) {
+            return $this->eeffRealesEriService->validate($uploaded['path'], $tipo, $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
         $result = $this->service->validate($uploaded['path'], $template);
 
@@ -440,8 +450,14 @@ class ExcelImportController
     public function execute(array $post, array $files, string $user): array
     {
         $template = $this->resolveTemplate($post);
-        $uploaded = $this->saveUploadedExcel($files);
         $tipo = strtoupper(trim((string) ($post['tipo'] ?? ($_GET['tipo'] ?? 'PRESUPUESTO'))));
+
+        if (($template['id'] ?? '') === 'eeff_reales_eri' && $this->eeffRealesEriService instanceof ExcelEeffRealesEriImportService) {
+            $projectId = isset($_SESSION['active_project_id']) ? (int) $_SESSION['active_project_id'] : null;
+            return $this->eeffRealesEriService->executeFromValidatedJson($tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $projectId);
+        }
+
+        $uploaded = $this->saveUploadedExcel($files);
         if (($template['id'] ?? '') === 'ingresos' && $this->ingresosService instanceof ExcelIngresosImportService) {
             return $this->ingresosService->execute($uploaded['path'], $tipo, $user !== '' ? $user : 'local-user', $this->resolveAnioRequest($post), $uploaded['originalName']);
         }
@@ -675,6 +691,8 @@ class ExcelImportController
                 $service = $this->gastosFinancierosService;
             } elseif ($templateId === 'produccion' && $this->produccionService instanceof ExcelProduccionImportService) {
                 $service = $this->produccionService;
+            } elseif ($templateId === 'eeff_reales_eri' && $this->eeffRealesEriService instanceof ExcelEeffRealesEriImportService) {
+                $this->respondJson(['ok' => false, 'message' => 'Preview grid no soportado para EEFF Reales ERI.'], 400);
             } else {
                 $this->respondJson(['ok' => false, 'message' => 'Preview no soportado para esta pestaña.'], 400);
             }

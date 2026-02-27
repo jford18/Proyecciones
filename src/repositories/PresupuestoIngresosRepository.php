@@ -308,6 +308,102 @@ class PresupuestoIngresosRepository
         return ['inserted_count' => $inserted, 'updated_count' => $updated];
     }
 
+    public function insertEeffRealesEriImportRows(string $tipo, int $anio, string $sheetName, string $fileName, string $usuario, array $rows, ?int $proyectoId = null): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        $sql = 'INSERT INTO EEFF_REALES_ERI_IMPORT (
+            PROYECTO_ID,
+            TIPO,
+            ANIO,
+            CODIGO,
+            DESCRIPCION,
+            ENERO,
+            FEBRERO,
+            MARZO,
+            ABRIL,
+            MAYO,
+            JUNIO,
+            JULIO,
+            AGOSTO,
+            SEPTIEMBRE,
+            OCTUBRE,
+            NOVIEMBRE,
+            DICIEMBRE,
+            TOTAL,
+            ORIGEN_ARCHIVO,
+            ORIGEN_HOJA,
+            ORIGEN_FILA,
+            USUARIO_CARGA
+        ) VALUES (
+            :PROYECTO_ID,
+            :TIPO,
+            :ANIO,
+            :CODIGO,
+            :DESCRIPCION,
+            :ENERO,
+            :FEBRERO,
+            :MARZO,
+            :ABRIL,
+            :MAYO,
+            :JUNIO,
+            :JULIO,
+            :AGOSTO,
+            :SEPTIEMBRE,
+            :OCTUBRE,
+            :NOVIEMBRE,
+            :DICIEMBRE,
+            :TOTAL,
+            :ORIGEN_ARCHIVO,
+            :ORIGEN_HOJA,
+            :ORIGEN_FILA,
+            :USUARIO_CARGA
+        )';
+
+        $stmt = $this->pdo->prepare($sql);
+        $inserted = 0;
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($rows as $row) {
+                $stmt->execute([
+                    'PROYECTO_ID' => $proyectoId,
+                    'TIPO' => $tipo,
+                    'ANIO' => $anio,
+                    'CODIGO' => (string) ($row['codigo'] ?? ''),
+                    'DESCRIPCION' => (string) ($row['descripcion'] ?? ''),
+                    'ENERO' => (float) ($row['enero'] ?? 0),
+                    'FEBRERO' => (float) ($row['febrero'] ?? 0),
+                    'MARZO' => (float) ($row['marzo'] ?? 0),
+                    'ABRIL' => (float) ($row['abril'] ?? 0),
+                    'MAYO' => (float) ($row['mayo'] ?? 0),
+                    'JUNIO' => (float) ($row['junio'] ?? 0),
+                    'JULIO' => (float) ($row['julio'] ?? 0),
+                    'AGOSTO' => (float) ($row['agosto'] ?? 0),
+                    'SEPTIEMBRE' => (float) ($row['septiembre'] ?? 0),
+                    'OCTUBRE' => (float) ($row['octubre'] ?? 0),
+                    'NOVIEMBRE' => (float) ($row['noviembre'] ?? 0),
+                    'DICIEMBRE' => (float) ($row['diciembre'] ?? 0),
+                    'TOTAL' => (float) ($row['total'] ?? 0),
+                    'ORIGEN_ARCHIVO' => $fileName,
+                    'ORIGEN_HOJA' => $sheetName,
+                    'ORIGEN_FILA' => (int) ($row['origen_fila'] ?? 0),
+                    'USUARIO_CARGA' => $usuario,
+                ]);
+                $inserted++;
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $inserted;
+    }
+
     public function upsertRowsByTab(string $tab, string $tipo, string $sheetName, string $fileName, string $usuario, array $rows): array
     {
         if ($rows === []) {
