@@ -148,6 +148,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     const excelGridHead = excelGridTable ? excelGridTable.querySelector('thead') : null;
     const excelGridBody = excelGridTable ? excelGridTable.querySelector('tbody') : null;
     const validatedJsonPathInput = document.getElementById('validatedJsonPath');
+    const TAB_KEY_EEFF_REALES_ERI = 'eeff_reales_eri';
     let lastValidatedJsonPath = '';
     let allDetails = [];
     let detailsFilter = 'all';
@@ -212,7 +213,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
         downloadExcelBtn.href = `${base}&action=export_xlsx`;
         viewExcelBtn.dataset.anio = String(selectedAnio || '');
         viewExcelBtn.style.display = hasExcelPreview ? '' : 'none';
-        downloadExcelBtn.style.display = tab === 'eeff_reales_eri' ? 'none' : '';
+        downloadExcelBtn.style.display = tab === TAB_KEY_EEFF_REALES_ERI ? 'none' : '';
       }
 
       if (mode === 'execute' && inserted + updated === 0 && (counts.importable_rows ?? 0) > 0) {
@@ -227,7 +228,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       renderDetails();
 
       const preview = Array.isArray(payload.preview) ? payload.preview : [];
-      if (tab === 'eeff_reales_eri') {
+      if (tab === TAB_KEY_EEFF_REALES_ERI) {
         if (previewHead) {
           previewHead.innerHTML = '<tr><th>Código</th><th>Descripción</th><th>Enero</th><th>Total</th></tr>';
         }
@@ -325,7 +326,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     }
 
     async function callImport(action, mode) {
-      const endpointUrl = tab === 'eeff_reales_eri'
+      const endpointUrl = tab === TAB_KEY_EEFF_REALES_ERI
         ? `?r=import-excel/${action === 'validate' ? 'validar-eeff-reales-eri' : 'importar-eeff-reales-eri'}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`
         : `?r=import-excel&action=${encodeURIComponent(action)}&tab=${encodeURIComponent(tab)}&tipo=${encodeURIComponent(tipo)}`;
       try {
@@ -399,6 +400,19 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     if (executeBtn) {
       executeBtn.addEventListener('click', (event) => {
         event.preventDefault();
+        if (tab === TAB_KEY_EEFF_REALES_ERI) {
+          const persistedJsonPath = (validatedJsonPathInput?.value || lastValidatedJsonPath || '').trim();
+          if (persistedJsonPath === '') {
+            resultCard.style.display = '';
+            resultTitle.textContent = 'Error';
+            resultFile.textContent = '';
+            resultSummary.innerHTML = '';
+            detailsBody.innerHTML = '';
+            previewBody.innerHTML = '';
+            resultAlert.innerHTML = '<div class="alert alert-danger mb-0">Debe validar primero.</div>';
+            return;
+          }
+        }
         callImport('execute', 'execute');
       });
     }
