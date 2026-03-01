@@ -40,6 +40,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <tbody id="eri-tbody"></tbody>
       </table>
     </div>
+    <p class="text-muted small mt-2 mb-0">
+      Fuente: Hoja Ingresos | Costos | Gastos operacionales | Gastos financieros | Otros ingresos | Otros egresos | Produccion.
+    </p>
   </div>
 </div>
 
@@ -473,7 +476,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
       const tdDesc = document.createElement('td');
       tdDesc.textContent = row.DESCRIPCION || '';
-      if (Number(row.ROW || 0) === 358) {
+      if (Number(row.ROW || 0) === 364) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-sm btn-outline-secondary ms-2';

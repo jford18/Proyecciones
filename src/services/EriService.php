@@ -11,9 +11,9 @@ class EriService
     private const MONTHS = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
     private const MONTH_TO_DB = ['ENERO' => 'ENE', 'FEBRERO' => 'FEB', 'MARZO' => 'MAR', 'ABRIL' => 'ABR', 'MAYO' => 'MAY', 'JUNIO' => 'JUN', 'JULIO' => 'JUL', 'AGOSTO' => 'AGO', 'SEPTIEMBRE' => 'SEP', 'OCTUBRE' => 'OCT', 'NOVIEMBRE' => 'NOV', 'DICIEMBRE' => 'DIC'];
     private const RESULTADO_ANTES_COMPONENTS = [
-        ['row' => 257, 'sign' => 1, 'section' => 'OPERACIÓN'],
-        ['row' => 328, 'sign' => 1, 'section' => 'GASTOS FINANCIEROS'],
-        ['row' => 356, 'sign' => 1, 'section' => 'OTROS EGRESOS'],
+        ['row' => 263, 'sign' => 1, 'section' => 'OPERACIÓN'],
+        ['row' => 334, 'sign' => 1, 'section' => 'GASTOS FINANCIEROS'],
+        ['row' => 362, 'sign' => 1, 'section' => 'OTROS EGRESOS'],
     ];
 
     public function __construct(private PDO $pdo) {}
@@ -177,31 +177,39 @@ class EriService
         $this->appendRangeBlock($rows, 115, '5010401', '5010405', '50104', '    Subvenciones del Gobierno', 'PRESUPUESTO_COSTOS', -1);
         $this->appendRangeBlock($rows, 121, '5010501', '5010505', '50105', '    Regalías', 'PRESUPUESTO_COSTOS', -1);
         $rows[] = ['ROW' => 128, 'CODE' => '501', 'DESCRIPCION' => 'TOTAL COSTO DE VENTAS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_COSTOS', 'SIGN' => -1];
-        $rows[] = ['ROW' => 130, 'CODE' => null, 'DESCRIPCION' => 'GANANCIA BRUTA', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
 
-        $rows[] = ['ROW' => 131, 'CODE' => '701', 'DESCRIPCION' => 'C. GASTOS OPERACIONALES', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
-        $this->appendRangeBlock($rows, 132, '7010101', '7010160', '70101', '    Gastos Operacionales - Administración', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
-        $this->appendRangeBlock($rows, 193, '7010201', '7010260', '70102', '    Gastos Operacionales - Ventas', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
-        $rows[] = ['ROW' => 255, 'CODE' => '701', 'DESCRIPCION' => 'TOTAL GASTOS OPERACIONALES', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
-        $rows[] = ['ROW' => 257, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO DE ACTIVIDADES DE OPERACIÓN', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 129, 'CODE' => '600', 'DESCRIPCION' => 'C. COSTO DE PRODUCCION', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
+        $rows[] = ['ROW' => 130, 'CODE' => '601', 'DESCRIPCION' => '(-) Costos de produccion de bienes', 'TYPE' => 'DETAIL', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
+        $rows[] = ['ROW' => 131, 'CODE' => '602', 'DESCRIPCION' => '(-) Costos de produccion de banano', 'TYPE' => 'DETAIL', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
+        $rows[] = ['ROW' => 132, 'CODE' => '603', 'DESCRIPCION' => '(-) Costos de produccion de animales', 'TYPE' => 'DETAIL', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
+        $rows[] = ['ROW' => 133, 'CODE' => '604', 'DESCRIPCION' => '(-) Costos de producción de animales – camaroneras', 'TYPE' => 'DETAIL', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
+        $rows[] = ['ROW' => 134, 'CODE' => '600', 'DESCRIPCION' => 'TOTAL COSTO DE PRODUCCION', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_PRODUCCION', 'SIGN' => -1];
 
-        $rows[] = ['ROW' => 258, 'CODE' => '80101', 'DESCRIPCION' => 'D. OTROS INGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
-        $this->appendRangeBlock($rows, 259, '8010101', '8010125', '80101', '    Otros Ingresos', 'PRESUPUESTO_OTROS_INGRESOS', 1);
-        $rows[] = ['ROW' => 285, 'CODE' => '80101', 'DESCRIPCION' => 'TOTAL OTROS INGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
+        $rows[] = ['ROW' => 136, 'CODE' => null, 'DESCRIPCION' => 'GANANCIA BRUTA', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
 
-        $rows[] = ['ROW' => 286, 'CODE' => '70301', 'DESCRIPCION' => 'E. GASTOS FINANCIEROS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
-        $this->appendRangeBlock($rows, 287, '7030101', '7030140', '70301', '    Gastos Financieros', 'PRESUPUESTO_GASTOS_FINANCIEROS', -1);
-        $rows[] = ['ROW' => 328, 'CODE' => '70301', 'DESCRIPCION' => 'TOTAL GASTOS FINANCIEROS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
+        $rows[] = ['ROW' => 137, 'CODE' => '701', 'DESCRIPCION' => 'D. GASTOS OPERACIONALES', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 138, '7010101', '7010160', '70101', '    Gastos Operacionales - Administración', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
+        $this->appendRangeBlock($rows, 199, '7010201', '7010260', '70102', '    Gastos Operacionales - Ventas', 'PRESUPUESTO_GASTOS_OPERACIONALES', -1);
+        $rows[] = ['ROW' => 261, 'CODE' => '701', 'DESCRIPCION' => 'TOTAL GASTOS OPERACIONALES', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'SIGN' => -1];
+        $rows[] = ['ROW' => 263, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO DE ACTIVIDADES DE OPERACIÓN', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
 
-        $rows[] = ['ROW' => 329, 'CODE' => '90101', 'DESCRIPCION' => 'F. OTROS EGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
-        $this->appendRangeBlock($rows, 330, '9010101', '9010125', '90101', '    Otros Egresos', 'PRESUPUESTO_OTROS_EGRESOS', -1);
-        $rows[] = ['ROW' => 356, 'CODE' => '90101', 'DESCRIPCION' => 'TOTAL OTROS EGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
+        $rows[] = ['ROW' => 264, 'CODE' => '80101', 'DESCRIPCION' => 'E. OTROS INGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
+        $this->appendRangeBlock($rows, 265, '8010101', '8010125', '80101', '    Otros Ingresos', 'PRESUPUESTO_OTROS_INGRESOS', 1);
+        $rows[] = ['ROW' => 291, 'CODE' => '80101', 'DESCRIPCION' => 'TOTAL OTROS INGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_INGRESOS', 'SIGN' => 1];
 
-        $rows[] = ['ROW' => 358, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO ANTES DE PARTICIPACIÓN E IMPUESTOS', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
-        $rows[] = ['ROW' => 360, 'CODE' => null, 'DESCRIPCION' => 'IMPUESTOS Y PARTICIPACIÓN', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => null, 'SIGN' => 1];
-        $rows[] = ['ROW' => 362, 'CODE' => null, 'DESCRIPCION' => '(-) Participación a Trabajadores (15%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
-        $rows[] = ['ROW' => 364, 'CODE' => null, 'DESCRIPCION' => '(-) Impuesto a la Renta Sociedades (25%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
-        $rows[] = ['ROW' => 366, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO DEL PERÍODO', 'TYPE' => 'RESULT_FINAL', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 292, 'CODE' => '70301', 'DESCRIPCION' => 'F. GASTOS FINANCIEROS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 293, '7030101', '7030140', '70301', '    Gastos Financieros', 'PRESUPUESTO_GASTOS_FINANCIEROS', -1);
+        $rows[] = ['ROW' => 334, 'CODE' => '70301', 'DESCRIPCION' => 'TOTAL GASTOS FINANCIEROS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'SIGN' => -1];
+
+        $rows[] = ['ROW' => 335, 'CODE' => '90101', 'DESCRIPCION' => 'G. OTROS EGRESOS', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
+        $this->appendRangeBlock($rows, 336, '9010101', '9010125', '90101', '    Otros Egresos', 'PRESUPUESTO_OTROS_EGRESOS', -1);
+        $rows[] = ['ROW' => 362, 'CODE' => '90101', 'DESCRIPCION' => 'TOTAL OTROS EGRESOS', 'TYPE' => 'TOTAL', 'SOURCE_TABLE' => 'PRESUPUESTO_OTROS_EGRESOS', 'SIGN' => -1];
+
+        $rows[] = ['ROW' => 364, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO ANTES DE PARTICIPACIÓN E IMPUESTOS', 'TYPE' => 'RESULT', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 366, 'CODE' => null, 'DESCRIPCION' => 'IMPUESTOS Y PARTICIPACIÓN', 'TYPE' => 'HEADER', 'SOURCE_TABLE' => null, 'SIGN' => 1];
+        $rows[] = ['ROW' => 368, 'CODE' => null, 'DESCRIPCION' => '(-) Participación a Trabajadores (15%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
+        $rows[] = ['ROW' => 370, 'CODE' => null, 'DESCRIPCION' => '(-) Impuesto a la Renta Sociedades (25%)', 'TYPE' => 'CALC', 'SOURCE_TABLE' => null, 'SIGN' => -1];
+        $rows[] = ['ROW' => 372, 'CODE' => null, 'DESCRIPCION' => 'RESULTADO DEL PERÍODO', 'TYPE' => 'RESULT_FINAL', 'SOURCE_TABLE' => null, 'SIGN' => 1];
 
         return $rows;
     }
@@ -421,13 +429,14 @@ class EriService
     {
         foreach (self::MONTHS as $month) {
             $totalIngresos = (float) ($rowsByRow[76][$month] ?? 0.0);
-            $totalCosto = (float) ($rowsByRow[128][$month] ?? 0.0);
-            $ganBruta = $totalIngresos + $totalCosto;
-            $rowsByRow[130][$month] = $ganBruta;
+            $totalCostoVentas = (float) ($rowsByRow[128][$month] ?? 0.0);
+            $totalCostoProduccion = (float) ($rowsByRow[134][$month] ?? 0.0);
+            $ganBruta = $totalIngresos + $totalCostoVentas + $totalCostoProduccion;
+            $rowsByRow[136][$month] = $ganBruta;
 
-            $totGasOp = (float) ($rowsByRow[255][$month] ?? 0.0);
+            $totGasOp = (float) ($rowsByRow[261][$month] ?? 0.0);
             $resOperacion = $ganBruta + $totGasOp;
-            $rowsByRow[257][$month] = $resOperacion;
+            $rowsByRow[263][$month] = $resOperacion;
 
             $resAntes = 0.0;
             foreach (self::RESULTADO_ANTES_COMPONENTS as $component) {
@@ -435,17 +444,17 @@ class EriService
                 $sign = (int) ($component['sign'] ?? 1);
                 $resAntes += ((float) ($rowsByRow[$rowNumber][$month] ?? 0.0)) * $sign;
             }
-            $rowsByRow[358][$month] = $resAntes;
-            $this->logResultadoAntesDebug($month, $resOperacion, (float) ($rowsByRow[328][$month] ?? 0.0), (float) ($rowsByRow[356][$month] ?? 0.0), $resAntes);
+            $rowsByRow[364][$month] = $resAntes;
+            $this->logResultadoAntesDebug($month, $resOperacion, (float) ($rowsByRow[334][$month] ?? 0.0), (float) ($rowsByRow[362][$month] ?? 0.0), $resAntes);
 
             $part = $resAntes > 0 ? -round($resAntes * $tasaPart, 0) : 0.0;
-            $rowsByRow[362][$month] = $part;
+            $rowsByRow[368][$month] = $part;
 
             $base = $resAntes + $part;
             $ir = $base > 0 ? -round($base * $tasaRenta, 0) : 0.0;
-            $rowsByRow[364][$month] = $ir;
+            $rowsByRow[370][$month] = $ir;
 
-            $rowsByRow[366][$month] = $resAntes + $part + $ir;
+            $rowsByRow[372][$month] = $resAntes + $part + $ir;
         }
     }
 
