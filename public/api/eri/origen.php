@@ -204,15 +204,26 @@ function handleEriReal(PDO $pdo): never
 
 function resolverTabOrigen(string $codigo): string
 {
-    $prefijo = substr($codigo, 0, 1);
+    $codigo = trim($codigo);
 
+    if (str_starts_with($codigo, '901')) {
+        return 'OTROS_EGRESOS';
+    }
+    if (str_starts_with($codigo, '801')) {
+        return 'OTROS_INGRESOS';
+    }
+    if (str_starts_with($codigo, '703')) {
+        return 'GASTOS_FINANCIEROS';
+    }
+    if (str_starts_with($codigo, '701')) {
+        return 'GASTOS_OPERACIONALES';
+    }
+
+    $prefijo = substr($codigo, 0, 1);
     return match ($prefijo) {
         '4' => 'INGRESOS',
         '5' => 'COSTOS',
-        '6' => 'GASTOS_OPERACIONALES',
-        '7' => 'GASTOS_FINANCIEROS',
-        '8' => 'OTROS_INGRESOS',
-        '9' => 'OTROS_EGRESOS',
+        '6' => 'PRODUCCION',
         default => 'DESCONOCIDO',
     };
 }
@@ -239,6 +250,7 @@ function tabMeta(string $tab): array
     return match ($tab) {
         'INGRESOS' => ['table' => 'PRESUPUESTO_INGRESOS', 'sheet' => '1.- Ingresos', 'id' => 'ingresos', 'sign' => 1],
         'COSTOS' => ['table' => 'PRESUPUESTO_COSTOS', 'sheet' => '2.- Costos', 'id' => 'costos', 'sign' => -1],
+        'PRODUCCION' => ['table' => 'PRESUPUESTO_PRODUCCION', 'sheet' => '7.-Produccion', 'id' => 'produccion', 'sign' => -1],
         'GASTOS_OPERACIONALES' => ['table' => 'PRESUPUESTO_GASTOS_OPERACIONALES', 'sheet' => '3.- Gastos operacionales', 'id' => 'gastos_operacionales', 'sign' => -1],
         'GASTOS_FINANCIEROS' => ['table' => 'PRESUPUESTO_GASTOS_FINANCIEROS', 'sheet' => '4.- Gastos financieros', 'id' => 'gastos_financieros', 'sign' => -1],
         'OTROS_INGRESOS' => ['table' => 'PRESUPUESTO_OTROS_INGRESOS', 'sheet' => '5.- Otros ingresos', 'id' => 'otros_ingresos', 'sign' => 1],
