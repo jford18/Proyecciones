@@ -85,6 +85,7 @@ class EriService
             }
         }
 
+        $this->recalculateCostoProduccionTotal($rowsByRow);
         $this->applyFormulaRows($rowsByRow, $tasaPart, $tasaRenta);
 
         foreach ($rows as &$row) {
@@ -456,6 +457,41 @@ class EriService
 
             $rowsByRow[372][$month] = $resAntes + $part + $ir;
         }
+    }
+
+    private function recalculateCostoProduccionTotal(array &$rowsByRow): void
+    {
+        $sourceRows = [130, 131, 132, 133];
+        $targetRow = 134;
+
+        foreach (self::MONTHS as $month) {
+            $rowsByRow[$targetRow][$month] = 0.0;
+            foreach ($sourceRows as $sourceRow) {
+                $rowsByRow[$targetRow][$month] += (float) ($rowsByRow[$sourceRow][$month] ?? 0.0);
+            }
+        }
+
+        $eneroItems = [];
+        $annualItems = [];
+        foreach ($sourceRows as $sourceRow) {
+            $code = (string) ($rowsByRow[$sourceRow]['CODE'] ?? '');
+            if ($code === '') {
+                continue;
+            }
+            $eneroItems[] = sprintf('%s=%s', $code, (string) ((float) ($rowsByRow[$sourceRow]['ENERO'] ?? 0.0)));
+            $annualItems[] = sprintf('%s=%s', $code, (string) $this->sumMonths($rowsByRow[$sourceRow] ?? []));
+        }
+
+        error_log(sprintf(
+            '[ERI][PRODUCCION][ENERO] %s, TOTAL600=%s',
+            implode(',', $eneroItems),
+            (string) ((float) ($rowsByRow[$targetRow]['ENERO'] ?? 0.0))
+        ));
+        error_log(sprintf(
+            '[ERI][PRODUCCION][ANUAL] %s, TOTAL600=%s',
+            implode(',', $annualItems),
+            (string) $this->sumMonths($rowsByRow[$targetRow] ?? [])
+        ));
     }
 
 
