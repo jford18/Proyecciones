@@ -14,7 +14,7 @@ $sections = [
         'consolidar-pg' => ['PASO 2 Consolidar PG', 'bi-diagram-3'],
         'generar-flujo' => ['PASO 3 Generar FLUJO', 'bi-calculator'],
     ]],
-    ['title' => 'Reportes', 'items' => ['flujo' => ['Ver FLUJO', 'bi-table'], 'anexos' => ['Ver ANEXOS', 'bi-list-columns'], 'eri' => ['ERI – Estado de Resultados Integral', 'bi-bar-chart-line']]],
+    ['title' => 'Reportes', 'items' => ['flujo' => ['Ver FLUJO', 'bi-table'], 'anexos' => ['Ver ANEXOS', 'bi-list-columns'], 'eri' => ['ERI – Estado de Resultados Integral', 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
     ['title' => null, 'items' => ['history-imports' => ['Historial importaciones', 'bi-clock-history'], 'config' => ['Configurar mapeo', 'bi-gear']]],
 ];
 ?>
