@@ -42,16 +42,12 @@ $isRealMode = $eriMode === 'real';
               <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
             <?php elseif ($isPresupuestoMode): ?>
               <th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
-            <?php elseif ($isRealMode): ?>
-              <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th>
             <?php endif; ?>
           <?php endforeach; ?>
           <th class="text-center eri-sticky-total">TOTAL</th>
           <?php if ($isFullMode): ?>
             <th class="text-center eri-sticky-total-var">VARIACIÓN</th>
             <th class="text-center eri-sticky-total-var-pct">VAR. %</th>
-          <?php elseif ($isRealMode): ?>
-            <th class="text-center eri-sticky-total-var">REAL</th>
           <?php endif; ?>
           <?php if (!$isRealMode): ?><th class="text-center eri-sticky-pct">%</th><?php endif; ?>
         </tr>
@@ -587,21 +583,28 @@ $isRealMode = $eriMode === 'real';
       months.forEach((month) => {
         const mes = months.indexOf(month) + 1;
         const tdVal = document.createElement('td');
-        const value = Number(row[month] || 0);
+        const codigo = String(row.CODE || '').trim();
+        const isDetalle = ES_DETALLE(codigo);
+        const realRawValue = row[`REAL_${month}`];
+        const realValue = realRawValue == null ? 0 : parseNumberSafe(realRawValue);
+        const value = isRealMode
+          ? (isDetalle ? realValue : null)
+          : Number(row[month] || 0);
         tdVal.classList.add('text-end', 'eri-cell-trace', 'ERI_MES');
         tdVal.dataset.month = String(mes);
-        tdVal.dataset.value = String(value);
+        tdVal.dataset.value = String(value ?? 0);
         tdVal.style.width = `${W_NUM}px`;
         tdVal.style.minWidth = `${W_NUM}px`;
         tdVal.style.maxWidth = `${W_NUM}px`;
         const warningBadge = row.__eriWarnings?.[month] && isDebugMode
           ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
           : '';
-        const codigo = String(row.CODE || '').trim();
-        const isDetalle = ES_DETALLE(codigo);
+        if (isRealMode && isDetalle) {
+          rowRealTotal += realValue;
+        }
         tdVal.innerHTML = `
           <div class="eri-cell-value-wrap">
-            <span>${fmt(value)}</span>${warningBadge}
+            <span>${value == null ? '<span class="eri-real-empty">—</span>' : fmt(value)}</span>${warningBadge}
           </div>
           ${isFullMode ? '<span class="eri-trace-icon" title="Ver origen">🔎</span>' : ''}`;
         if (isFullMode && row.CODE) {
@@ -611,35 +614,28 @@ $isRealMode = $eriMode === 'real';
         }
         tr.appendChild(tdVal);
 
-        if (isFullMode || isRealMode) {
+        if (isFullMode) {
           const tdReal = document.createElement('td');
           tdReal.classList.add('text-end');
           tdReal.style.width = `${W_NUM}px`;
           tdReal.style.minWidth = `${W_NUM}px`;
           tdReal.style.maxWidth = `${W_NUM}px`;
           if (isDetalle) {
-            const realRawValue = row[`REAL_${month}`];
-            const realValue = realRawValue == null ? 0 : realRawValue;
-            rowRealTotal += parseNumberSafe(realValue);
-            if (isFullMode) {
-              const status = realSaveState[cellKey(codigo, mes)] || (realRawValue == null ? 'idle' : 'saved');
-              tdReal.innerHTML = `
-                <div class="eri-real-wrap">
-                  <input
-                    class="form-control form-control-sm eri-real-input real-input"
-                    type="text"
-                    inputmode="decimal"
-                    data-code="${escapeHtml(codigo)}"
-                    data-desc="${escapeHtml(row.DESCRIPCION || '')}"
-                    data-mes="${mes}"
-                    value="${escapeHtml(realValue)}"
-                    placeholder="0"
-                  >
-                  <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
-                </div>`;
-            } else {
-              tdReal.innerHTML = `<span>${fmt(realValue)}</span>`;
-            }
+            const status = realSaveState[cellKey(codigo, mes)] || (realRawValue == null ? 'idle' : 'saved');
+            tdReal.innerHTML = `
+              <div class="eri-real-wrap">
+                <input
+                  class="form-control form-control-sm eri-real-input real-input"
+                  type="text"
+                  inputmode="decimal"
+                  data-code="${escapeHtml(codigo)}"
+                  data-desc="${escapeHtml(row.DESCRIPCION || '')}"
+                  data-mes="${mes}"
+                  value="${escapeHtml(realValue)}"
+                  placeholder="0"
+                >
+                <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
+              </div>`;
           } else {
             tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
           }
@@ -677,7 +673,9 @@ $isRealMode = $eriMode === 'real';
         }
       });
 
-      const rowTotal = months.reduce((acc, month) => acc + Number(row[month] || 0), 0);
+      const rowTotal = isRealMode
+        ? rowRealTotal
+        : months.reduce((acc, month) => acc + Number(row[month] || 0), 0);
       const block = String(row.CODE || '').trim().charAt(0);
       const denominator = /[4-9]/.test(block) ? Number(blockTotals[block] || 0) : 0;
       const rowPct = denominator === 0 ? 0 : (rowTotal / denominator) * 100;
@@ -697,11 +695,6 @@ $isRealMode = $eriMode === 'real';
         tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
         tdTotVarPct.textContent = '—';
         tr.appendChild(tdTotVarPct);
-      } else if (isRealMode) {
-        const tdTotReal = document.createElement('td');
-        tdTotReal.classList.add('text-end', 'eri-sticky-total-var');
-        tdTotReal.textContent = fmt(rowRealTotal);
-        tr.appendChild(tdTotReal);
       }
 
       if (!isRealMode) {
