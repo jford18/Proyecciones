@@ -5,10 +5,13 @@ $eriMode = (string) ($eriMode ?? 'full');
 $isFullMode = $eriMode === 'full';
 $isPresupuestoMode = $eriMode === 'presupuesto';
 $isRealMode = $eriMode === 'real';
+$eriHeading = $isRealMode
+    ? '📊 ERI REAL'
+    : ($isPresupuestoMode ? '📊 ERI PRESUPUESTO' : '📊 ERI – Estado de Resultados Integral');
 ?>
 <div class="card">
   <div class="card-body">
-    <h5 class="mb-3">📊 ERI – Estado de Resultados Integral</h5>
+    <h5 class="mb-3"><?= $eriHeading ?></h5>
     <div class="row g-2 align-items-end mb-3">
       <div class="col-md-2">
         <label class="form-label">Año/Periodo</label>
