@@ -176,42 +176,6 @@ try {
         redirectTo((string) ($_POST['back_route'] ?? 'dashboard'), ['tipo' => $activeTipo]);
     }
 
-    $importRoutes = ['import-gastos' => 'GASTOS', 'import-nomina' => 'NOMINA', 'import-cobranza' => 'COBRANZA', 'import-activos' => 'ACTIVOS'];
-    if (isset($importRoutes[$route]) && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $tipoAnexo = $importRoutes[$route];
-        $result = $importController->importAnexo($tipoAnexo, $_POST, $_FILES);
-        $_SESSION['active_project_id'] = (int) ($_POST['proyecto_id'] ?? $activeProjectId);
-        $_SESSION['import_result'] = $result;
-        $_SESSION['flash'] = ['type' => 'success', 'text' => $result['message']];
-        redirectTo($route, ['tipo' => $activeTipo]);
-    }
-
-    if ($route === 'consolidar-pg' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $status = $workflowService->status($activeProjectId, $activeTipo);
-        if (!$status['step1']['ok']) {
-            throw new RuntimeException('Paso 2 bloqueado: primero importe anexos en Paso 1.');
-        }
-        $pg = $pgService->consolidate($activeProjectId, $activeTipo);
-        $_SESSION['flash'] = ['type' => 'success', 'text' => 'PG consolidado correctamente.'];
-        $_SESSION['pg_preview'] = $pg;
-        $logRepo->insertLog($activeProjectId, '-', 'PG_CONSOLIDADO', 0, 'Consolidación PG ejecutada');
-        redirectTo('consolidar-pg', ['tipo' => $activeTipo]);
-    }
-
-    if ($route === 'generar-flujo' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $status = $workflowService->status($activeProjectId, $activeTipo);
-        if (!$status['step1']['ok'] || !$status['step2']['ok']) {
-            throw new RuntimeException('Paso 3 bloqueado: complete Paso 1 y Paso 2 antes de generar FLUJO.');
-        }
-        $pg = $pgService->load($activeProjectId, $activeTipo);
-        if ($pg === null) {
-            throw new RuntimeException('No existe consolidación PG para este proyecto/tipo.');
-        }
-        $count = $flujoService->generate($activeProjectId, $activeTipo, $pg);
-        $logRepo->insertLog($activeProjectId, '-', 'FLUJO_GENERADO', $count, 'Generación de flujo final');
-        $_SESSION['flash'] = ['type' => 'success', 'text' => "Flujo generado. Celdas actualizadas: {$count}."];
-        redirectTo('flujo', ['tipo' => $activeTipo]);
-    }
 } catch (Throwable $e) {
     $_SESSION['flash'] = ['type' => 'error', 'text' => $e->getMessage()];
     redirectTo($route === '' ? 'dashboard' : $route, ['tipo' => $activeTipo]);
@@ -240,36 +204,6 @@ switch ($route) {
         unset($_SESSION['excel_validation_result'], $_SESSION['excel_execution_result']);
         $contentView = __DIR__ . '/../src/views/import_excel.php';
         break;
-    case 'import-gastos': case 'import-nomina': case 'import-cobranza': case 'import-activos':
-        $labels = ['import-gastos' => ['GASTOS', '1.1'], 'import-nomina' => ['NOMINA', '1.2'], 'import-cobranza' => ['COBRANZA', '1.3'], 'import-activos' => ['ACTIVOS', '1.4']];
-        [$viewData['anexoTipo'], $viewData['stepLabel']] = $labels[$route];
-        $contentView = __DIR__ . '/../src/views/import_anexo.php';
-        break;
-    case 'consolidar-pg':
-        $viewData['pgPreview'] = $_SESSION['pg_preview'] ?? $pgService->load($activeProjectId, $activeTipo);
-        unset($_SESSION['pg_preview']);
-        $contentView = __DIR__ . '/../src/views/consolidar_pg.php';
-        break;
-    case 'generar-flujo':
-        $contentView = __DIR__ . '/../src/views/generar_flujo.php';
-        break;
-    case 'flujo':
-        $rows = $flujoRepo->report($activeProjectId, $activeTipo);
-        $byLinea = [];
-        foreach ($rows as $row) {
-            $id = (int) $row['ID'];
-            $byLinea[$id] ??= ['SECCION' => $row['SECCION'], 'NOMBRE' => $row['NOMBRE'], 'meses' => array_fill(1, 12, 0.0)];
-            if ($row['MES'] !== null) {
-                $byLinea[$id]['meses'][(int) $row['MES']] = (float) $row['VALOR'];
-            }
-        }
-        $viewData['flujo'] = array_values($byLinea);
-        $contentView = __DIR__ . '/../src/views/flujo.php';
-        break;
-    case 'anexos':
-        $viewData['anexos'] = $anexoController->list($_GET + ['proyectoId' => $_GET['proyectoId'] ?? $activeProjectId]);
-        $contentView = __DIR__ . '/../src/views/anexos.php';
-        break;
     case 'eri':
     case 'eri_presupuesto':
     case 'eri_real':
@@ -277,15 +211,9 @@ switch ($route) {
         $viewData['eriMode'] = $route === 'eri' ? 'full' : ($route === 'eri_presupuesto' ? 'presupuesto' : 'real');
         $contentView = __DIR__ . '/../src/views/eri.php';
         break;
-    case 'history-imports':
-        $viewData['logs'] = $logRepo->listRecent($activeProjectId, 100);
-        $contentView = __DIR__ . '/../src/views/history_imports.php';
-        break;
-    case 'config':
-        $contentView = __DIR__ . '/../src/views/config.php';
-        break;
     default:
-        redirectTo('dashboard', ['tipo' => $activeTipo]);
+        http_response_code(404);
+        $contentView = __DIR__ . '/../src/views/404.php';
 }
 
 require __DIR__ . '/../src/views/layout.php';
