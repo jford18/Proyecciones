@@ -19,10 +19,16 @@ body { background: #f3f6fb; }
 .eri-cell-trace { position: relative; cursor: pointer; padding-right: 1.25rem !important; }
 .eri-trace-icon { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; font-size: 0.7rem; }
 .eri-table .eri-sticky-total,
+.eri-table .eri-sticky-total-var,
+.eri-table .eri-sticky-total-var-pct,
 .eri-table .eri-sticky-pct { position: sticky; z-index: 1; }
 .eri-table .eri-sticky-pct { right: 0; min-width: 90px; background: inherit; }
-.eri-table .eri-sticky-total { right: 90px; min-width: 130px; background: inherit; }
+.eri-table .eri-sticky-total-var-pct { right: 90px; min-width: 90px; background: inherit; }
+.eri-table .eri-sticky-total-var { right: 180px; min-width: 130px; background: inherit; }
+.eri-table .eri-sticky-total { right: 310px; min-width: 130px; background: inherit; }
 .eri-table thead .eri-sticky-total,
+.eri-table thead .eri-sticky-total-var,
+.eri-table thead .eri-sticky-total-var-pct,
 .eri-table thead .eri-sticky-pct { z-index: 3; background: #0f172a; }
 .eri-cell-trace:hover .eri-trace-icon { opacity: 1; }
 

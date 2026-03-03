@@ -31,9 +31,11 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
           <?php foreach ($months as $month): ?>
-            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
+            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
           <?php endforeach; ?>
           <th class="text-center eri-sticky-total">TOTAL</th>
+          <th class="text-center eri-sticky-total-var">VARIACIÓN</th>
+          <th class="text-center eri-sticky-total-var-pct">VAR. %</th>
           <th class="text-center eri-sticky-pct">%</th>
         </tr>
         </thead>
@@ -188,6 +190,8 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     return rounded < 0 ? `(${abs})` : abs;
   };
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
+  const formatNumber = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatPct = (value) => `${Number(value || 0).toFixed(2)}%`;
   const round0 = (value) => Math.round(Number(value || 0));
   const cellKey = (codigo, mes) => `${String(codigo || '').trim()}|${Number(mes || 0)}`;
   const ES_DETALLE = (CODIGO) => CODIGO && CODIGO.toString().trim().length >= 7;
@@ -274,6 +278,75 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const parsed = Number(text);
     if (!Number.isFinite(parsed)) return 0;
     return isNegative ? -Math.abs(parsed) : parsed;
+  };
+
+  const parseNumber = (value) => parseNumberSafe(value);
+
+  const calcVarPct = (realValue, mesValue) => {
+    const real = Number(realValue || 0);
+    const mes = Number(mesValue || 0);
+    if (mes === 0) {
+      return real === 0 ? 0 : 100;
+    }
+    return (real - mes) / mes * 100;
+  };
+
+  const getMesCellValue = (tr, monthIndex) => {
+    const cell = tr.querySelector(`td.ERI_MES[data-month="${monthIndex}"]`);
+    if (!cell) return 0;
+    return parseNumber(cell.dataset.value ?? cell.textContent ?? '0');
+  };
+
+  const recalcRow = (tr) => {
+    if (!tr) return;
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
+      const varCell = tr.querySelector(`td.ERI_VAR[data-month="${monthIndex}"]`);
+      const pctCell = tr.querySelector(`td.ERI_VAR_PCT[data-month="${monthIndex}"]`);
+      const realInput = tr.querySelector(`input.eri-real-input[data-mes="${monthIndex}"]`);
+      if (!varCell || !pctCell) continue;
+      if (!realInput) {
+        varCell.textContent = '—';
+        pctCell.textContent = '—';
+        continue;
+      }
+      const mes = getMesCellValue(tr, monthIndex);
+      const real = parseNumber(realInput.value || '0');
+      const variacion = real - mes;
+      const pct = calcVarPct(real, mes);
+      varCell.textContent = formatNumber(variacion);
+      pctCell.textContent = formatPct(pct);
+    }
+  };
+
+  const recalcTotal = (tr) => {
+    if (!tr) return;
+    const totVarCell = tr.querySelector('td.ERI_TOT_VAR');
+    const totPctCell = tr.querySelector('td.ERI_TOT_VAR_PCT');
+    if (!totVarCell || !totPctCell) return;
+    const realInputs = tr.querySelectorAll('input.eri-real-input');
+    if (!realInputs.length) {
+      totVarCell.textContent = '—';
+      totPctCell.textContent = '—';
+      return;
+    }
+    let mesTotal = 0;
+    let realTotal = 0;
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
+      mesTotal += getMesCellValue(tr, monthIndex);
+      const realInput = tr.querySelector(`input.eri-real-input[data-mes="${monthIndex}"]`);
+      realTotal += realInput ? parseNumber(realInput.value || '0') : 0;
+    }
+    const variacionTotal = realTotal - mesTotal;
+    const pctTotal = calcVarPct(realTotal, mesTotal);
+    totVarCell.textContent = formatNumber(variacionTotal);
+    totPctCell.textContent = formatPct(pctTotal);
+  };
+
+  const recalcAllRows = () => {
+    tbody.querySelectorAll('tr').forEach((tr) => {
+      recalcRow(tr);
+      recalcTotal(tr);
+    });
   };
 
   const asNegative = (value) => {
@@ -490,7 +563,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         const mes = months.indexOf(month) + 1;
         const tdVal = document.createElement('td');
         const value = Number(row[month] || 0);
-        tdVal.classList.add('text-end', 'eri-cell-trace');
+        tdVal.classList.add('text-end', 'eri-cell-trace', 'ERI_MES');
+        tdVal.dataset.month = String(mes);
+        tdVal.dataset.value = String(value);
         tdVal.style.width = `${W_NUM}px`;
         tdVal.style.minWidth = `${W_NUM}px`;
         tdVal.style.maxWidth = `${W_NUM}px`;
@@ -507,7 +582,6 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         if (row.CODE) {
           tdVal.dataset.code = row.CODE;
           tdVal.dataset.desc = row.DESCRIPCION || '';
-          tdVal.dataset.month = String(mes);
           tdVal.dataset.value = String(value);
         }
         tr.appendChild(tdVal);
@@ -524,7 +598,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
           tdReal.innerHTML = `
             <div class="eri-real-wrap">
               <input
-                class="form-control form-control-sm eri-real-input"
+                class="form-control form-control-sm eri-real-input real-input"
                 type="text"
                 inputmode="decimal"
                 data-code="${escapeHtml(codigo)}"
@@ -539,6 +613,24 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
           tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
         }
         tr.appendChild(tdReal);
+
+        const tdVar = document.createElement('td');
+        tdVar.classList.add('text-end', 'ERI_VAR');
+        tdVar.dataset.month = String(mes);
+        tdVar.style.width = `${W_NUM}px`;
+        tdVar.style.minWidth = `${W_NUM}px`;
+        tdVar.style.maxWidth = `${W_NUM}px`;
+        tdVar.textContent = '—';
+        tr.appendChild(tdVar);
+
+        const tdVarPct = document.createElement('td');
+        tdVarPct.classList.add('text-end', 'ERI_VAR_PCT');
+        tdVarPct.dataset.month = String(mes);
+        tdVarPct.style.width = `${W_NUM}px`;
+        tdVarPct.style.minWidth = `${W_NUM}px`;
+        tdVarPct.style.maxWidth = `${W_NUM}px`;
+        tdVarPct.textContent = '—';
+        tr.appendChild(tdVarPct);
 
         const tdPct = document.createElement('td');
         tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
@@ -559,6 +651,16 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       tdTotal.classList.add('text-end', 'eri-sticky-total');
       tr.appendChild(tdTotal);
 
+      const tdTotVar = document.createElement('td');
+      tdTotVar.classList.add('text-end', 'eri-sticky-total-var', 'ERI_TOT_VAR');
+      tdTotVar.textContent = '—';
+      tr.appendChild(tdTotVar);
+
+      const tdTotVarPct = document.createElement('td');
+      tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
+      tdTotVarPct.textContent = '—';
+      tr.appendChild(tdTotVarPct);
+
       const tdTotalPct = document.createElement('td');
       tdTotalPct.textContent = fmtPct(rowPct);
       tdTotalPct.classList.add('text-end', 'eri-sticky-pct');
@@ -566,7 +668,25 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
       tbody.appendChild(tr);
     });
+
+    recalcAllRows();
   };
+
+  tbody.addEventListener('input', (event) => {
+    const input = event.target.closest('.real-input, .eri-real-input');
+    if (!input) return;
+    const tr = input.closest('tr');
+    recalcRow(tr);
+    recalcTotal(tr);
+  });
+
+  tbody.addEventListener('change', (event) => {
+    const input = event.target.closest('.real-input, .eri-real-input');
+    if (!input) return;
+    const tr = input.closest('tr');
+    recalcRow(tr);
+    recalcTotal(tr);
+  });
 
   tbody.addEventListener('click', (event) => {
     if (event.target.closest('.eri-real-input') || event.target.closest('.eri-real-wrap')) {

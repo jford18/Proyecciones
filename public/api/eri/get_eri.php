@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\db\Db;
 use App\services\EriService;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -30,24 +31,105 @@ try {
         $headers = ['CÓDIGO', 'DESCRIPCIÓN'];
         foreach ($months as $month) {
             $headers[] = $month;
+            $headers[] = 'REAL';
+            $headers[] = 'VARIACIÓN';
+            $headers[] = '% VARIACIÓN';
             $headers[] = '%';
         }
+        $headers[] = 'TOTAL';
+        $headers[] = 'REAL TOTAL';
+        $headers[] = 'VARIACIÓN TOTAL';
+        $headers[] = 'VAR. % TOTAL';
+        $headers[] = '% TOTAL';
         $sheet->fromArray($headers, null, 'A1');
 
-        $excelRow = 2;
-        foreach ($payload['rows'] as $row) {
-            $data = [(string) ($row['CODE'] ?? ''), (string) ($row['DESCRIPCION'] ?? '')];
+        $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+        $rowTotals = [];
+        foreach ($rows as $index => $row) {
+            $total = 0.0;
             foreach ($months as $month) {
-                $data[] = (float) ($row[$month] ?? 0);
-                $data[] = (float) ($row[$month . '_PCT'] ?? 0);
+                $total += (float) ($row[$month] ?? 0);
             }
+            $rowTotals[$index] = $total;
+        }
+
+        $blockTotals = [];
+        foreach ($rows as $index => $row) {
+            $code = trim((string) ($row['CODE'] ?? ''));
+            $block = substr($code, 0, 1);
+            if (!preg_match('/[4-9]/', (string) $block)) {
+                continue;
+            }
+            if (strtoupper((string) ($row['TYPE'] ?? '')) === 'TOTAL') {
+                $blockTotals[$block] = (float) ($rowTotals[$index] ?? 0);
+            }
+        }
+
+        foreach ($rows as $index => $row) {
+            $code = trim((string) ($row['CODE'] ?? ''));
+            $block = substr($code, 0, 1);
+            if (!preg_match('/[4-9]/', (string) $block) || array_key_exists($block, $blockTotals)) {
+                continue;
+            }
+            $sum = 0.0;
+            foreach ($rows as $currentIndex => $current) {
+                $currentCode = trim((string) ($current['CODE'] ?? ''));
+                $sameBlock = substr($currentCode, 0, 1) === $block;
+                $isDetail = strtoupper((string) ($current['TYPE'] ?? '')) === 'DETAIL';
+                if ($sameBlock && $isDetail) {
+                    $sum += (float) ($rowTotals[$currentIndex] ?? 0);
+                }
+            }
+            $blockTotals[$block] = $sum;
+        }
+
+        $excelRow = 2;
+        foreach ($rows as $row) {
+            $data = [(string) ($row['CODE'] ?? ''), (string) ($row['DESCRIPCION'] ?? '')];
+            $codigo = trim((string) ($row['CODE'] ?? ''));
+            $isDetalle = strlen($codigo) >= 7;
+            $mesTotal = 0.0;
+            $realTotal = 0.0;
+
+            foreach ($months as $month) {
+                $mes = (float) ($row[$month] ?? 0);
+                $real = $isDetalle ? (float) ($row['REAL_' . $month] ?? 0) : 0.0;
+                $var = $real - $mes;
+                $varPct = $mes == 0.0 ? ($real == 0.0 ? 0.0 : 100.0) : (($var / $mes) * 100);
+
+                $data[] = $mes;
+                $data[] = $isDetalle ? $real : null;
+                $data[] = $isDetalle ? $var : null;
+                $data[] = $isDetalle ? $varPct : null;
+                $data[] = (float) ($row[$month . '_PCT'] ?? 0);
+
+                $mesTotal += $mes;
+                if ($isDetalle) {
+                    $realTotal += $real;
+                }
+            }
+
+            $varTotal = $realTotal - $mesTotal;
+            $varPctTotal = $mesTotal == 0.0 ? ($realTotal == 0.0 ? 0.0 : 100.0) : (($varTotal / $mesTotal) * 100);
+            $rowBlock = substr($codigo, 0, 1);
+            $rowDenominator = preg_match('/[4-9]/', (string) $rowBlock) ? (float) ($blockTotals[$rowBlock] ?? 0) : 0.0;
+            $rowPctTotal = $rowDenominator == 0.0 ? 0.0 : (($mesTotal / $rowDenominator) * 100);
+
+            $data[] = $mesTotal;
+            $data[] = $isDetalle ? $realTotal : null;
+            $data[] = $isDetalle ? $varTotal : null;
+            $data[] = $isDetalle ? $varPctTotal : null;
+            $data[] = $rowPctTotal;
+
             $sheet->fromArray($data, null, 'A' . $excelRow);
             $excelRow++;
         }
 
-        $sheet->getStyle('A1:Z1')->getFont()->setBold(true);
-        foreach (range('A', 'Z') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
+        $highestColumn = $sheet->getHighestColumn();
+        $sheet->getStyle('A1:' . $highestColumn . '1')->getFont()->setBold(true);
+        $highestColumnIndex = Coordinate::columnIndexFromString($highestColumn);
+        for ($column = 1; $column <= $highestColumnIndex; $column++) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
         }
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
