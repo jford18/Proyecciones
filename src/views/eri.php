@@ -1,6 +1,10 @@
 <?php
 $months = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
+$eriMode = (string) ($eriMode ?? 'full');
+$isFullMode = $eriMode === 'full';
+$isPresupuestoMode = $eriMode === 'presupuesto';
+$isRealMode = $eriMode === 'real';
 ?>
 <div class="card">
   <div class="card-body">
@@ -14,6 +18,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <label class="form-label">% Participación trabajadores</label>
         <input id="eri-participacion" class="form-control" type="number" min="0" step="0.01" value="15">
       </div>
+      <?php if ($isFullMode): ?>
       <div class="col-md-3">
         <label class="form-label">% Impuesto renta</label>
         <input id="eri-renta" class="form-control" type="number" min="0" step="0.01" value="25">
@@ -23,6 +28,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <a id="eri-exportar" class="btn btn-outline-success" href="#" target="_blank" rel="noopener">Exportar Excel</a>
         <button id="eri-comparativo-open" class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#eriComparativoModal">COMPARATIVO</button>
       </div>
+      <?php endif; ?>
     </div>
 
     <div class="table-sticky eri-table-wrap">
@@ -31,12 +37,23 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
           <?php foreach ($months as $month): ?>
-            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
+            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th>
+            <?php if ($isFullMode): ?>
+              <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
+            <?php elseif ($isPresupuestoMode): ?>
+              <th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
+            <?php elseif ($isRealMode): ?>
+              <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th>
+            <?php endif; ?>
           <?php endforeach; ?>
           <th class="text-center eri-sticky-total">TOTAL</th>
-          <th class="text-center eri-sticky-total-var">VARIACIÓN</th>
-          <th class="text-center eri-sticky-total-var-pct">VAR. %</th>
-          <th class="text-center eri-sticky-pct">%</th>
+          <?php if ($isFullMode): ?>
+            <th class="text-center eri-sticky-total-var">VARIACIÓN</th>
+            <th class="text-center eri-sticky-total-var-pct">VAR. %</th>
+          <?php elseif ($isRealMode): ?>
+            <th class="text-center eri-sticky-total-var">REAL</th>
+          <?php endif; ?>
+          <?php if (!$isRealMode): ?><th class="text-center eri-sticky-pct">%</th><?php endif; ?>
         </tr>
         </thead>
         <tbody id="eri-tbody"></tbody>
@@ -48,6 +65,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   </div>
 </div>
 
+<?php if ($isFullMode): ?>
 <div class="modal fade" id="eriComparativoModal" tabindex="-1" aria-labelledby="eriComparativoModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
@@ -142,17 +160,23 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   </div>
 </div>
 
+<?php endif; ?>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (() => {
   const months = <?= json_encode($months, JSON_UNESCAPED_UNICODE) ?>;
+  const eriMode = <?= json_encode($eriMode) ?>;
+  const isFullMode = eriMode === 'full';
+  const isPresupuestoMode = eriMode === 'presupuesto';
+  const isRealMode = eriMode === 'real';
   const tbody = document.getElementById('eri-tbody');
   const yearInput = document.getElementById('eri-anio');
   const partInput = document.getElementById('eri-participacion');
   const rentaInput = document.getElementById('eri-renta');
   const exportLink = document.getElementById('eri-exportar');
   const drawerBody = document.getElementById('eri-origen-body');
-  const drawer = new bootstrap.Offcanvas('#eriOrigenDrawer');
+  const drawer = isFullMode ? new bootstrap.Offcanvas('#eriOrigenDrawer') : null;
   const compAlert = document.getElementById('eri-comparativo-alert');
   const compTipoA = document.getElementById('eri-comp-tipo-a');
   const compTipoB = document.getElementById('eri-comp-tipo-b');
@@ -174,7 +198,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
   const compTableBody = compTable ? compTable.querySelector('tbody') : null;
   const desgloseAlert = document.getElementById('eri-desglose-alert');
   const desgloseTableBody = document.querySelector('#eri-desglose-table tbody');
-  const desgloseModal = new bootstrap.Modal('#eriDesgloseModal');
+  const desgloseModal = isFullMode ? new bootstrap.Modal('#eriDesgloseModal') : null;
   const isDebugMode = new URLSearchParams(window.location.search).get('debug') === '1' || ['localhost', '127.0.0.1'].includes(window.location.hostname);
   let currentRows = [];
   let realSaveState = {};
@@ -422,7 +446,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
   const buildUrl = (format = 'json') => {
     const tipoReal = (new URLSearchParams(window.location.search).get('tipo') || 'REAL').toUpperCase();
-    return `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number(rentaInput.value || 25) / 100).toString())}&tipo_real=${encodeURIComponent(tipoReal)}&format=${format}`;
+    return `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number((rentaInput && rentaInput.value) || 25) / 100).toString())}&tipo_real=${encodeURIComponent(tipoReal)}&format=${format}`;
   };
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
@@ -549,7 +573,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 
       const tdDesc = document.createElement('td');
       tdDesc.textContent = row.DESCRIPCION || '';
-      if (Number(row.ROW || 0) === 364) {
+      if (isFullMode && Number(row.ROW || 0) === 364) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-sm btn-outline-secondary ms-2';
@@ -559,6 +583,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       }
       tr.appendChild(tdDesc);
 
+      let rowRealTotal = 0;
       months.forEach((month) => {
         const mes = months.indexOf(month) + 1;
         const tdVal = document.createElement('td');
@@ -578,67 +603,78 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
           <div class="eri-cell-value-wrap">
             <span>${fmt(value)}</span>${warningBadge}
           </div>
-          <span class="eri-trace-icon" title="Ver origen">🔎</span>`;
-        if (row.CODE) {
+          ${isFullMode ? '<span class="eri-trace-icon" title="Ver origen">🔎</span>' : ''}`;
+        if (isFullMode && row.CODE) {
           tdVal.dataset.code = row.CODE;
           tdVal.dataset.desc = row.DESCRIPCION || '';
           tdVal.dataset.value = String(value);
         }
         tr.appendChild(tdVal);
 
-        const tdReal = document.createElement('td');
-        tdReal.classList.add('text-end');
-        tdReal.style.width = `${W_NUM}px`;
-        tdReal.style.minWidth = `${W_NUM}px`;
-        tdReal.style.maxWidth = `${W_NUM}px`;
-        if (isDetalle) {
-          const realRawValue = row[`REAL_${month}`];
-          const realValue = realRawValue == null ? 0 : realRawValue;
-          const status = realSaveState[cellKey(codigo, mes)] || (realRawValue == null ? 'idle' : 'saved');
-          tdReal.innerHTML = `
-            <div class="eri-real-wrap">
-              <input
-                class="form-control form-control-sm eri-real-input real-input"
-                type="text"
-                inputmode="decimal"
-                data-code="${escapeHtml(codigo)}"
-                data-desc="${escapeHtml(row.DESCRIPCION || '')}"
-                data-mes="${mes}"
-                value="${escapeHtml(realValue)}"
-                placeholder="0"
-              >
-              <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
-            </div>`;
-        } else {
-          tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
+        if (isFullMode || isRealMode) {
+          const tdReal = document.createElement('td');
+          tdReal.classList.add('text-end');
+          tdReal.style.width = `${W_NUM}px`;
+          tdReal.style.minWidth = `${W_NUM}px`;
+          tdReal.style.maxWidth = `${W_NUM}px`;
+          if (isDetalle) {
+            const realRawValue = row[`REAL_${month}`];
+            const realValue = realRawValue == null ? 0 : realRawValue;
+            rowRealTotal += parseNumberSafe(realValue);
+            if (isFullMode) {
+              const status = realSaveState[cellKey(codigo, mes)] || (realRawValue == null ? 'idle' : 'saved');
+              tdReal.innerHTML = `
+                <div class="eri-real-wrap">
+                  <input
+                    class="form-control form-control-sm eri-real-input real-input"
+                    type="text"
+                    inputmode="decimal"
+                    data-code="${escapeHtml(codigo)}"
+                    data-desc="${escapeHtml(row.DESCRIPCION || '')}"
+                    data-mes="${mes}"
+                    value="${escapeHtml(realValue)}"
+                    placeholder="0"
+                  >
+                  <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
+                </div>`;
+            } else {
+              tdReal.innerHTML = `<span>${fmt(realValue)}</span>`;
+            }
+          } else {
+            tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
+          }
+          tr.appendChild(tdReal);
         }
-        tr.appendChild(tdReal);
 
-        const tdVar = document.createElement('td');
-        tdVar.classList.add('text-end', 'ERI_VAR');
-        tdVar.dataset.month = String(mes);
-        tdVar.style.width = `${W_NUM}px`;
-        tdVar.style.minWidth = `${W_NUM}px`;
-        tdVar.style.maxWidth = `${W_NUM}px`;
-        tdVar.textContent = '—';
-        tr.appendChild(tdVar);
+        if (isFullMode) {
+          const tdVar = document.createElement('td');
+          tdVar.classList.add('text-end', 'ERI_VAR');
+          tdVar.dataset.month = String(mes);
+          tdVar.style.width = `${W_NUM}px`;
+          tdVar.style.minWidth = `${W_NUM}px`;
+          tdVar.style.maxWidth = `${W_NUM}px`;
+          tdVar.textContent = '—';
+          tr.appendChild(tdVar);
 
-        const tdVarPct = document.createElement('td');
-        tdVarPct.classList.add('text-end', 'ERI_VAR_PCT');
-        tdVarPct.dataset.month = String(mes);
-        tdVarPct.style.width = `${W_NUM}px`;
-        tdVarPct.style.minWidth = `${W_NUM}px`;
-        tdVarPct.style.maxWidth = `${W_NUM}px`;
-        tdVarPct.textContent = '—';
-        tr.appendChild(tdVarPct);
+          const tdVarPct = document.createElement('td');
+          tdVarPct.classList.add('text-end', 'ERI_VAR_PCT');
+          tdVarPct.dataset.month = String(mes);
+          tdVarPct.style.width = `${W_NUM}px`;
+          tdVarPct.style.minWidth = `${W_NUM}px`;
+          tdVarPct.style.maxWidth = `${W_NUM}px`;
+          tdVarPct.textContent = '—';
+          tr.appendChild(tdVarPct);
+        }
 
-        const tdPct = document.createElement('td');
-        tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
-        tdPct.classList.add('text-end');
-        tdPct.style.width = `${W_PCT}px`;
-        tdPct.style.minWidth = `${W_PCT}px`;
-        tdPct.style.maxWidth = `${W_PCT}px`;
-        tr.appendChild(tdPct);
+        if (isFullMode || isPresupuestoMode) {
+          const tdPct = document.createElement('td');
+          tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
+          tdPct.classList.add('text-end');
+          tdPct.style.width = `${W_PCT}px`;
+          tdPct.style.minWidth = `${W_PCT}px`;
+          tdPct.style.maxWidth = `${W_PCT}px`;
+          tr.appendChild(tdPct);
+        }
       });
 
       const rowTotal = months.reduce((acc, month) => acc + Number(row[month] || 0), 0);
@@ -651,27 +687,36 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
       tdTotal.classList.add('text-end', 'eri-sticky-total');
       tr.appendChild(tdTotal);
 
-      const tdTotVar = document.createElement('td');
-      tdTotVar.classList.add('text-end', 'eri-sticky-total-var', 'ERI_TOT_VAR');
-      tdTotVar.textContent = '—';
-      tr.appendChild(tdTotVar);
+      if (isFullMode) {
+        const tdTotVar = document.createElement('td');
+        tdTotVar.classList.add('text-end', 'eri-sticky-total-var', 'ERI_TOT_VAR');
+        tdTotVar.textContent = '—';
+        tr.appendChild(tdTotVar);
 
-      const tdTotVarPct = document.createElement('td');
-      tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
-      tdTotVarPct.textContent = '—';
-      tr.appendChild(tdTotVarPct);
+        const tdTotVarPct = document.createElement('td');
+        tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
+        tdTotVarPct.textContent = '—';
+        tr.appendChild(tdTotVarPct);
+      } else if (isRealMode) {
+        const tdTotReal = document.createElement('td');
+        tdTotReal.classList.add('text-end', 'eri-sticky-total-var');
+        tdTotReal.textContent = fmt(rowRealTotal);
+        tr.appendChild(tdTotReal);
+      }
 
-      const tdTotalPct = document.createElement('td');
-      tdTotalPct.textContent = fmtPct(rowPct);
-      tdTotalPct.classList.add('text-end', 'eri-sticky-pct');
-      tr.appendChild(tdTotalPct);
-
+      if (!isRealMode) {
+        const tdTotalPct = document.createElement('td');
+        tdTotalPct.textContent = fmtPct(rowPct);
+        tdTotalPct.classList.add('text-end', 'eri-sticky-pct');
+        tr.appendChild(tdTotalPct);
+      }
       tbody.appendChild(tr);
     });
 
-    recalcAllRows();
+    if (isFullMode) recalcAllRows();
   };
 
+  if (isFullMode) {
   tbody.addEventListener('input', (event) => {
     const input = event.target.closest('.real-input, .eri-real-input');
     if (!input) return;
@@ -740,7 +785,7 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     const value = raw === '' ? null : raw;
     saveRealValue({ codigo, descripcion, mes, valorReal: value });
   }, true);
-
+  }
 
   const renderComparativoSummary = (resumen = {}) => {
     const cards = [
@@ -986,19 +1031,21 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     }
     currentRows = recalcEriCierre(data.rows || data.ROWS || [], {
       participacion: partInput.value,
-      renta: rentaInput.value,
+      renta: rentaInput ? rentaInput.value : 25,
     });
     renderRows(currentRows);
-    exportLink.href = buildUrl('xlsx');
+    if (exportLink) exportLink.href = buildUrl('xlsx');
   };
 
-  document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
-  [partInput, rentaInput].forEach((input) => {
+  if (isFullMode) {
+    document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
+  }
+  [partInput, rentaInput].filter(Boolean).forEach((input) => {
     input.addEventListener('input', () => {
       if (!Array.isArray(currentRows) || currentRows.length === 0) return;
       recalcEriCierre(currentRows, {
         participacion: partInput.value,
-        renta: rentaInput.value,
+        renta: rentaInput ? rentaInput.value : 25,
       });
       renderRows(currentRows);
     });
@@ -1028,7 +1075,9 @@ $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
     }));
   }
 
-  updateModoUi();
+  if (isFullMode) {
+    updateModoUi();
+  }
   load().catch((e) => alert(e.message));
 })();
 </script>

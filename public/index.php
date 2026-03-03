@@ -271,7 +271,10 @@ switch ($route) {
         $contentView = __DIR__ . '/../src/views/anexos.php';
         break;
     case 'eri':
+    case 'eri_presupuesto':
+    case 'eri_real':
         $viewData['eriDefaultYear'] = isset($_GET['anio']) ? (int) $_GET['anio'] : (int) date('Y');
+        $viewData['eriMode'] = $route === 'eri' ? 'full' : ($route === 'eri_presupuesto' ? 'presupuesto' : 'real');
         $contentView = __DIR__ . '/../src/views/eri.php';
         break;
     case 'history-imports':
