@@ -6,16 +6,9 @@ extract($viewData);
 $sections = [
     ['title' => null, 'items' => ['dashboard' => ['Dashboard', 'bi-speedometer2']]],
     ['title' => 'Importaciones', 'items' => [
-        'import-gastos' => ['PASO 1.1 GASTOS', 'bi-cash-stack'],
-        'import-nomina' => ['PASO 1.2 NÓMINA', 'bi-people'],
-        'import-cobranza' => ['PASO 1.3 COBRANZA', 'bi-wallet2'],
-        'import-activos' => ['PASO 1.4 ACTIVOS', 'bi-building'],
         'import-excel' => ['Importar Excel (7 pestañas)', 'bi-file-earmark-spreadsheet'],
-        'consolidar-pg' => ['PASO 2 Consolidar PG', 'bi-diagram-3'],
-        'generar-flujo' => ['PASO 3 Generar FLUJO', 'bi-calculator'],
     ]],
-    ['title' => 'Reportes', 'items' => ['flujo' => ['Ver FLUJO', 'bi-table'], 'anexos' => ['Ver ANEXOS', 'bi-list-columns'], 'eri' => ['ERI – Estado de Resultados Integral', 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
-    ['title' => null, 'items' => ['history-imports' => ['Historial importaciones', 'bi-clock-history'], 'config' => ['Configurar mapeo', 'bi-gear']]],
+    ['title' => 'Reportes', 'items' => ['eri' => ['ERI – Estado de Resultados Integral', 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
 ];
 ?>
 <!doctype html>
