@@ -44,81 +44,37 @@ try {
         $sheet->fromArray($headers, null, 'A1');
 
         $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
-        $rowTotals = [];
-        foreach ($rows as $index => $row) {
-            $total = 0.0;
-            foreach ($months as $month) {
-                $total += (float) ($row[$month] ?? 0);
-            }
-            $rowTotals[$index] = $total;
-        }
-
-        $blockTotals = [];
-        foreach ($rows as $index => $row) {
-            $code = trim((string) ($row['CODE'] ?? ''));
-            $block = substr($code, 0, 1);
-            if (!preg_match('/[4-9]/', (string) $block)) {
-                continue;
-            }
-            if (strtoupper((string) ($row['TYPE'] ?? '')) === 'TOTAL') {
-                $blockTotals[$block] = (float) ($rowTotals[$index] ?? 0);
-            }
-        }
-
-        foreach ($rows as $index => $row) {
-            $code = trim((string) ($row['CODE'] ?? ''));
-            $block = substr($code, 0, 1);
-            if (!preg_match('/[4-9]/', (string) $block) || array_key_exists($block, $blockTotals)) {
-                continue;
-            }
-            $sum = 0.0;
-            foreach ($rows as $currentIndex => $current) {
-                $currentCode = trim((string) ($current['CODE'] ?? ''));
-                $sameBlock = substr($currentCode, 0, 1) === $block;
-                $isDetail = strtoupper((string) ($current['TYPE'] ?? '')) === 'DETAIL';
-                if ($sameBlock && $isDetail) {
-                    $sum += (float) ($rowTotals[$currentIndex] ?? 0);
-                }
-            }
-            $blockTotals[$block] = $sum;
-        }
-
         $excelRow = 2;
         foreach ($rows as $row) {
             $data = [(string) ($row['CODE'] ?? ''), (string) ($row['DESCRIPCION'] ?? '')];
             $codigo = trim((string) ($row['CODE'] ?? ''));
-            $isDetalle = strlen($codigo) >= 7;
             $mesTotal = 0.0;
             $realTotal = 0.0;
 
             foreach ($months as $month) {
                 $mes = (float) ($row[$month] ?? 0);
-                $real = $isDetalle ? (float) ($row['REAL_' . $month] ?? 0) : 0.0;
+                $real = (float) ($row['REAL_' . $month] ?? 0);
                 $var = $real - $mes;
                 $varPct = $mes == 0.0 ? ($real == 0.0 ? 0.0 : 100.0) : (($var / $mes) * 100);
 
                 $data[] = $mes;
-                $data[] = $isDetalle ? $real : null;
-                $data[] = $isDetalle ? $var : null;
-                $data[] = $isDetalle ? $varPct : null;
-                $data[] = (float) ($row[$month . '_PCT'] ?? 0);
+                $data[] = $real;
+                $data[] = $var;
+                $data[] = $varPct;
+                $data[] = (float) ($row['REAL_' . $month . '_PCT'] ?? 0);
 
                 $mesTotal += $mes;
-                if ($isDetalle) {
-                    $realTotal += $real;
-                }
+                $realTotal += $real;
             }
 
             $varTotal = $realTotal - $mesTotal;
             $varPctTotal = $mesTotal == 0.0 ? ($realTotal == 0.0 ? 0.0 : 100.0) : (($varTotal / $mesTotal) * 100);
-            $rowBlock = substr($codigo, 0, 1);
-            $rowDenominator = preg_match('/[4-9]/', (string) $rowBlock) ? (float) ($blockTotals[$rowBlock] ?? 0) : 0.0;
-            $rowPctTotal = $rowDenominator == 0.0 ? 0.0 : (($mesTotal / $rowDenominator) * 100);
+            $rowPctTotal = (float) ($row['REAL_PCT_TOTAL'] ?? 0.0);
 
             $data[] = $mesTotal;
-            $data[] = $isDetalle ? $realTotal : null;
-            $data[] = $isDetalle ? $varTotal : null;
-            $data[] = $isDetalle ? $varPctTotal : null;
+            $data[] = $realTotal;
+            $data[] = $varTotal;
+            $data[] = $varPctTotal;
             $data[] = $rowPctTotal;
 
             $sheet->fromArray($data, null, 'A' . $excelRow);

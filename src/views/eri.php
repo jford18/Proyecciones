@@ -328,8 +328,6 @@ $eriHeading = $isRealMode
       const realInput = tr.querySelector(`input.eri-real-input[data-mes="${monthIndex}"]`);
       if (!varCell || !pctCell) continue;
       if (!realInput) {
-        varCell.textContent = '—';
-        pctCell.textContent = '—';
         continue;
       }
       const mes = getMesCellValue(tr, monthIndex);
@@ -348,8 +346,6 @@ $eriHeading = $isRealMode
     if (!totVarCell || !totPctCell) return;
     const realInputs = tr.querySelectorAll('input.eri-real-input');
     if (!realInputs.length) {
-      totVarCell.textContent = '—';
-      totPctCell.textContent = '—';
       return;
     }
     let mesTotal = 0;
@@ -602,7 +598,7 @@ $eriHeading = $isRealMode
         const warningBadge = row.__eriWarnings?.[month] && isDebugMode
           ? '<span class="badge text-bg-warning ms-1" title="Revisar cálculo / datos">!</span>'
           : '';
-        if (isRealMode && isDetalle) {
+        if (isRealMode || isFullMode) {
           rowRealTotal += realValue;
         }
         tdVal.innerHTML = `
@@ -640,7 +636,7 @@ $eriHeading = $isRealMode
                 <span class="eri-real-status eri-real-status-${status}" data-key="${escapeHtml(cellKey(codigo, mes))}" title="${status === 'saved' ? 'Guardado' : (status === 'error' ? 'Error al guardar' : '')}">${status === 'saved' ? '✔' : (status === 'error' ? 'Error' : '')}</span>
               </div>`;
           } else {
-            tdReal.innerHTML = '<span class="eri-real-empty">—</span>';
+            tdReal.innerHTML = `<span>${fmt(realValue)}</span>`;
           }
           tr.appendChild(tdReal);
         }
@@ -652,7 +648,7 @@ $eriHeading = $isRealMode
           tdVar.style.width = `${W_NUM}px`;
           tdVar.style.minWidth = `${W_NUM}px`;
           tdVar.style.maxWidth = `${W_NUM}px`;
-          tdVar.textContent = '—';
+          tdVar.textContent = formatNumber(realValue - mes);
           tr.appendChild(tdVar);
 
           const tdVarPct = document.createElement('td');
@@ -661,13 +657,14 @@ $eriHeading = $isRealMode
           tdVarPct.style.width = `${W_NUM}px`;
           tdVarPct.style.minWidth = `${W_NUM}px`;
           tdVarPct.style.maxWidth = `${W_NUM}px`;
-          tdVarPct.textContent = '—';
+          tdVarPct.textContent = formatPct(calcVarPct(realValue, mes));
           tr.appendChild(tdVarPct);
         }
 
         if (isFullMode || isPresupuestoMode) {
           const tdPct = document.createElement('td');
-          tdPct.textContent = fmt(row[`${month}_PCT`] || 0);
+          const pctValue = isFullMode ? Number(row[`REAL_${month}_PCT`] || 0) : Number(row[`${month}_PCT`] || 0);
+          tdPct.textContent = fmtPct(pctValue);
           tdPct.classList.add('text-end');
           tdPct.style.width = `${W_PCT}px`;
           tdPct.style.minWidth = `${W_PCT}px`;
@@ -681,7 +678,7 @@ $eriHeading = $isRealMode
         : months.reduce((acc, month) => acc + Number(row[month] || 0), 0);
       const block = String(row.CODE || '').trim().charAt(0);
       const denominator = /[4-9]/.test(block) ? Number(blockTotals[block] || 0) : 0;
-      const rowPct = denominator === 0 ? 0 : (rowTotal / denominator) * 100;
+      const rowPct = isFullMode ? Number(row.REAL_PCT_TOTAL || 0) : (denominator === 0 ? 0 : (rowTotal / denominator) * 100);
 
       const tdTotal = document.createElement('td');
       tdTotal.textContent = fmt(rowTotal);
@@ -691,12 +688,12 @@ $eriHeading = $isRealMode
       if (isFullMode) {
         const tdTotVar = document.createElement('td');
         tdTotVar.classList.add('text-end', 'eri-sticky-total-var', 'ERI_TOT_VAR');
-        tdTotVar.textContent = '—';
+        tdTotVar.textContent = formatNumber(rowRealTotal - rowTotal);
         tr.appendChild(tdTotVar);
 
         const tdTotVarPct = document.createElement('td');
         tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
-        tdTotVarPct.textContent = '—';
+        tdTotVarPct.textContent = formatPct(calcVarPct(rowRealTotal, rowTotal));
         tr.appendChild(tdTotVarPct);
       }
 
