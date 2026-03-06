@@ -567,7 +567,9 @@ class EriService
             if ($code === '') {
                 continue;
             }
-            $codes[$code] = true;
+
+            // Guardar la lista de códigos como valores evita coerción implícita de keys numéricos a int.
+            $codes[] = $code;
             $realByCode[$code] ??= $this->zeroRealMonths();
             if (strlen($code) === 7) {
                 foreach (self::MONTHS as $month) {
@@ -577,21 +579,32 @@ class EriService
             }
         }
 
-        $lengths = array_values(array_unique(array_map('strlen', array_keys($codes))));
+        $codes = array_values(array_unique(array_map(
+            fn(mixed $code): string => $this->normalizeCodigoDigits((string) ($code ?? '')),
+            $codes
+        )));
+        $codes = array_values(array_filter($codes, static fn(string $code): bool => $code !== ''));
+
+        $lengths = array_values(array_unique(array_map(
+            static fn(mixed $code): int => strlen((string) ($code ?? '')),
+            $codes
+        )));
         rsort($lengths);
         foreach ($lengths as $length) {
             if ($length <= 1) {
                 continue;
             }
             $childLength = $length + 2;
-            foreach (array_keys($codes) as $code) {
-                if (strlen($code) !== $length) {
+            foreach ($codes as $code) {
+                $code = $this->normalizeCodigoDigits((string) ($code ?? ''));
+                if ($code === '' || strlen($code) !== $length) {
                     continue;
                 }
                 $hasChild = false;
                 $sum = $this->zeroRealMonths();
-                foreach (array_keys($codes) as $candidate) {
-                    if (strlen($candidate) !== $childLength || !str_starts_with($candidate, $code)) {
+                foreach ($codes as $candidate) {
+                    $candidate = $this->normalizeCodigoDigits((string) ($candidate ?? ''));
+                    if ($candidate === '' || strlen($candidate) !== $childLength || !str_starts_with($candidate, $code)) {
                         continue;
                     }
                     $hasChild = true;
