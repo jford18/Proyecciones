@@ -43,7 +43,7 @@ $eriHeading = $isRealMode
             <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th>
             <?php if ($isFullMode): ?>
               <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
-            <?php elseif ($isPresupuestoMode): ?>
+            <?php elseif ($isPresupuestoMode || $isRealMode): ?>
               <th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
             <?php endif; ?>
           <?php endforeach; ?>
@@ -661,10 +661,10 @@ $eriHeading = $isRealMode
           tr.appendChild(tdVarPct);
         }
 
-        if (isFullMode || isPresupuestoMode) {
+        if (isFullMode || isPresupuestoMode || isRealMode) {
           const tdPct = document.createElement('td');
           const pctValue = isFullMode ? Number(row[`REAL_${month}_PCT`] || 0) : Number(row[`${month}_PCT`] || 0);
-          tdPct.textContent = fmtPct(pctValue);
+          tdPct.textContent = isRealMode && !isDetalle ? '—' : fmtPct(pctValue);
           tdPct.classList.add('text-end');
           tdPct.style.width = `${W_PCT}px`;
           tdPct.style.minWidth = `${W_PCT}px`;
