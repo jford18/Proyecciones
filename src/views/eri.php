@@ -7,7 +7,7 @@ $isPresupuestoMode = $eriMode === 'presupuesto';
 $isRealMode = $eriMode === 'real';
 $eriHeading = $isRealMode
     ? '📊 ERI REAL'
-    : ($isPresupuestoMode ? '📊 ERI PRESUPUESTO' : '📊 ERI – Estado de Resultados Integral');
+    : ($isPresupuestoMode ? '📊 ERI PRESUPUESTO' : '📊 ERI – Estado de Resultados Integral (Presupuesto vs Real)');
 ?>
 <div class="card">
   <div class="card-body">

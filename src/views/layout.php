@@ -6,18 +6,20 @@ extract($viewData);
 $pageTitles = [
     'dashboard' => 'Dashboard',
     'import-excel' => 'Importar Excel',
-    'eri' => 'ERI – Estado de Resultados Integral',
+    'eri' => 'ERI – Estado de Resultados Integral (Presupuesto vs Real)',
     'eri_presupuesto' => 'ERI Presupuesto',
     'eri_real' => 'ERI Real',
 ];
 $pageTitle = $pageTitles[$route] ?? 'Proyecciones';
+
+$eriFullTitle = 'ERI – Estado de Resultados Integral (Presupuesto vs Real)';
 
 $sections = [
     ['title' => null, 'items' => ['dashboard' => ['Dashboard', 'bi-speedometer2']]],
     ['title' => 'Importaciones', 'items' => [
         'import-excel' => ['Importar Excel (7 pestañas)', 'bi-file-earmark-spreadsheet'],
     ]],
-    ['title' => 'Reportes', 'items' => ['eri' => ['ERI – Estado de Resultados Integral', 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
+    ['title' => 'Reportes', 'items' => ['eri' => [$eriFullTitle, 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
 ];
 ?>
 <!doctype html>
