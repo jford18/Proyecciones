@@ -587,7 +587,7 @@ $eriHeading = $isRealMode
         const realRawValue = row[`REAL_${month}`];
         const realValue = realRawValue == null ? 0 : parseNumberSafe(realRawValue);
         const value = isRealMode
-          ? (isDetalle ? realValue : null)
+          ? realValue
           : Number(row[month] || 0);
         tdVal.classList.add('text-end', 'eri-cell-trace', 'ERI_MES');
         tdVal.dataset.month = String(mes);
@@ -664,7 +664,7 @@ $eriHeading = $isRealMode
         if (isFullMode || isPresupuestoMode || isRealMode) {
           const tdPct = document.createElement('td');
           const pctValue = isFullMode ? Number(row[`REAL_${month}_PCT`] || 0) : Number(row[`${month}_PCT`] || 0);
-          tdPct.textContent = isRealMode && !isDetalle ? '—' : fmtPct(pctValue);
+          tdPct.textContent = fmtPct(pctValue);
           tdPct.classList.add('text-end');
           tdPct.style.width = `${W_PCT}px`;
           tdPct.style.minWidth = `${W_PCT}px`;
