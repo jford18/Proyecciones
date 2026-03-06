@@ -200,7 +200,7 @@ function eriComparativoGetSistemaRows(int $anio, string $tipo): array
     $config = require __DIR__ . '/../../../src/config/config.php';
     $pdo = Db::pdo($config);
     $service = new EriService($pdo);
-    $payload = $service->build($anio, 0.15, 0.25);
+    $payload = $service->build($anio, 0.15, 0.25, $tipo);
     $sourceRows = (array) ($payload['rows'] ?? []);
 
     $rows = [];

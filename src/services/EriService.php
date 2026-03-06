@@ -98,6 +98,17 @@ class EriService
         }
         unset($row);
 
+        $realByCode = $this->buildDirectChildRealByCode($rows);
+        foreach ($rows as &$row) {
+            $normalizedRowCode = $this->normalizeCodigoDigits((string) ($row['CODE'] ?? ''));
+            $realMonths = $realByCode[$normalizedRowCode] ?? $this->zeroRealMonths();
+            foreach (self::MONTHS as $month) {
+                $row['REAL_' . $month] = (float) ($realMonths['REAL_' . $month] ?? 0.0);
+            }
+            $row['REAL_TOTAL'] = (float) ($realMonths['REAL_TOTAL'] ?? 0.0);
+        }
+        unset($row);
+
         $totalIngresos = $rowsByRow[76] ?? $this->emptyRow(76, '401', 'TOTAL INGRESOS DE ACTIVIDADES ORDINARIAS', 'TOTAL');
         foreach ($rows as &$row) {
             foreach (self::MONTHS as $month) {
@@ -106,6 +117,8 @@ class EriService
             }
         }
         unset($row);
+
+        $this->applyRealPercentagesByParent($rows, $realByCode);
 
         $this->logRealSampleDebug($periodo, $realByCode);
         error_log(sprintf('[ERI][REAL] anio=%d tipo=%s rows=%d match_real=%d', $periodo, strtoupper(trim($tipoReal)), count($rows), $matchedRealRows));
@@ -542,6 +555,84 @@ class EriService
         $row['REAL_TOTAL'] = 0.0;
 
         return $row;
+    }
+
+    private function buildDirectChildRealByCode(array $rows): array
+    {
+        $codes = [];
+        $realByCode = [];
+
+        foreach ($rows as $row) {
+            $code = $this->normalizeCodigoDigits((string) ($row['CODE'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            $codes[$code] = true;
+            $realByCode[$code] ??= $this->zeroRealMonths();
+            if (strlen($code) === 7) {
+                foreach (self::MONTHS as $month) {
+                    $realByCode[$code]['REAL_' . $month] = (float) ($row['REAL_' . $month] ?? 0.0);
+                }
+                $realByCode[$code]['REAL_TOTAL'] = (float) ($row['REAL_TOTAL'] ?? 0.0);
+            }
+        }
+
+        $lengths = array_values(array_unique(array_map('strlen', array_keys($codes))));
+        rsort($lengths);
+        foreach ($lengths as $length) {
+            if ($length <= 1) {
+                continue;
+            }
+            $childLength = $length + 2;
+            foreach (array_keys($codes) as $code) {
+                if (strlen($code) !== $length) {
+                    continue;
+                }
+                $hasChild = false;
+                $sum = $this->zeroRealMonths();
+                foreach (array_keys($codes) as $candidate) {
+                    if (strlen($candidate) !== $childLength || !str_starts_with($candidate, $code)) {
+                        continue;
+                    }
+                    $hasChild = true;
+                    foreach (self::MONTHS as $month) {
+                        $sum['REAL_' . $month] += (float) ($realByCode[$candidate]['REAL_' . $month] ?? 0.0);
+                    }
+                    $sum['REAL_TOTAL'] += (float) ($realByCode[$candidate]['REAL_TOTAL'] ?? 0.0);
+                }
+                if ($hasChild) {
+                    $realByCode[$code] = $sum;
+                }
+            }
+        }
+
+        return $realByCode;
+    }
+
+    private function applyRealPercentagesByParent(array &$rows, array $realByCode): void
+    {
+        foreach ($rows as &$row) {
+            $code = $this->normalizeCodigoDigits((string) ($row['CODE'] ?? ''));
+            if ($code === '' || strlen($code) < 3) {
+                foreach (self::MONTHS as $month) {
+                    $row['REAL_' . $month . '_PCT'] = 0.0;
+                }
+                $row['REAL_PCT_TOTAL'] = 0.0;
+                continue;
+            }
+
+            $parentCode = strlen($code) > 3 ? substr($code, 0, -2) : '';
+            foreach (self::MONTHS as $month) {
+                $numerator = (float) ($row['REAL_' . $month] ?? 0.0);
+                $denominator = $parentCode === '' ? 0.0 : (float) ($realByCode[$parentCode]['REAL_' . $month] ?? 0.0);
+                $row['REAL_' . $month . '_PCT'] = $denominator == 0.0 ? 0.0 : ($numerator / $denominator) * 100;
+            }
+
+            $realTotal = (float) ($row['REAL_TOTAL'] ?? 0.0);
+            $denTotal = $parentCode === '' ? 0.0 : (float) ($realByCode[$parentCode]['REAL_TOTAL'] ?? 0.0);
+            $row['REAL_PCT_TOTAL'] = $denTotal == 0.0 ? 0.0 : ($realTotal / $denTotal) * 100;
+        }
+        unset($row);
     }
 
     private function logRealSampleDebug(int $periodo, array $importRealByCode): void
