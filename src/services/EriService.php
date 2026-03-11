@@ -109,6 +109,16 @@ class EriService
         }
         unset($row);
 
+        // Replica la lógica estructural del presupuesto para REAL en filas de resultado/cálculo
+        // (p. ej. GANANCIA BRUTA, RESULTADO DE ACTIVIDADES, RESULTADO ANTES, IMPUESTOS).
+        $rowsByRowReal = $this->buildRowsByRowReal($rows);
+        $this->recalculateCostoProduccionTotalReal($rowsByRowReal);
+        $this->applyFormulaRowsReal($rowsByRowReal, $tasaPart, $tasaRenta);
+        $this->mergeRowsByRowReal($rows, $rowsByRowReal);
+
+        // Recalcular mapa jerárquico luego de aplicar fórmulas para mantener consistencia de porcentajes.
+        $realByCode = $this->buildDirectChildRealByCode($rows);
+
         $totalIngresos = $rowsByRow[76] ?? $this->emptyRow(76, '401', 'TOTAL INGRESOS DE ACTIVIDADES ORDINARIAS', 'TOTAL');
         foreach ($rows as &$row) {
             foreach (self::MONTHS as $month) {
@@ -622,6 +632,102 @@ class EriService
         return $realByCode;
     }
 
+
+    private function buildRowsByRowReal(array $rows): array
+    {
+        $rowsByRowReal = [];
+        foreach ($rows as $row) {
+            $rowNumber = (int) ($row['ROW'] ?? 0);
+            if ($rowNumber <= 0) {
+                continue;
+            }
+            $rowsByRowReal[$rowNumber] = $this->zeroRealMonths();
+            foreach (self::MONTHS as $month) {
+                $rowsByRowReal[$rowNumber]['REAL_' . $month] = (float) ($row['REAL_' . $month] ?? 0.0);
+            }
+            $rowsByRowReal[$rowNumber]['REAL_TOTAL'] = (float) ($row['REAL_TOTAL'] ?? 0.0);
+        }
+
+        return $rowsByRowReal;
+    }
+
+    private function recalculateCostoProduccionTotalReal(array &$rowsByRowReal): void
+    {
+        $sourceRows = [130, 131, 132, 133];
+        $targetRow = 134;
+
+        foreach (self::MONTHS as $month) {
+            $key = 'REAL_' . $month;
+            $rowsByRowReal[$targetRow][$key] = 0.0;
+            foreach ($sourceRows as $sourceRow) {
+                $rowsByRowReal[$targetRow][$key] += (float) ($rowsByRowReal[$sourceRow][$key] ?? 0.0);
+            }
+        }
+        $rowsByRowReal[$targetRow]['REAL_TOTAL'] = $this->sumRealMonths($rowsByRowReal[$targetRow] ?? []);
+    }
+
+    private function applyFormulaRowsReal(array &$rowsByRowReal, float $tasaPart, float $tasaRenta): void
+    {
+        foreach (self::MONTHS as $month) {
+            $key = 'REAL_' . $month;
+            $totalIngresos = (float) ($rowsByRowReal[76][$key] ?? 0.0);
+            $totalCostoVentas = (float) ($rowsByRowReal[128][$key] ?? 0.0);
+            $totalCostoProduccion = (float) ($rowsByRowReal[134][$key] ?? 0.0);
+            $ganBruta = $totalIngresos + $totalCostoVentas + $totalCostoProduccion;
+            $rowsByRowReal[136][$key] = $ganBruta;
+
+            $totGasOp = (float) ($rowsByRowReal[261][$key] ?? 0.0);
+            $resOperacion = $ganBruta + $totGasOp;
+            $rowsByRowReal[263][$key] = $resOperacion;
+
+            $resAntes = 0.0;
+            foreach (self::RESULTADO_ANTES_COMPONENTS as $component) {
+                $rowNumber = (int) ($component['row'] ?? 0);
+                $sign = (int) ($component['sign'] ?? 1);
+                $resAntes += ((float) ($rowsByRowReal[$rowNumber][$key] ?? 0.0)) * $sign;
+            }
+            $rowsByRowReal[364][$key] = $resAntes;
+
+            $part = $resAntes > 0 ? -round($resAntes * $tasaPart, 0) : 0.0;
+            $rowsByRowReal[368][$key] = $part;
+
+            $base = $resAntes + $part;
+            $ir = $base > 0 ? -round($base * $tasaRenta, 0) : 0.0;
+            $rowsByRowReal[370][$key] = $ir;
+
+            $rowsByRowReal[372][$key] = $resAntes + $part + $ir;
+        }
+
+        foreach ([134, 136, 263, 364, 368, 370, 372] as $rowNumber) {
+            $rowsByRowReal[$rowNumber]['REAL_TOTAL'] = $this->sumRealMonths($rowsByRowReal[$rowNumber] ?? []);
+        }
+    }
+
+    private function mergeRowsByRowReal(array &$rows, array $rowsByRowReal): void
+    {
+        foreach ($rows as &$row) {
+            $rowNumber = (int) ($row['ROW'] ?? 0);
+            if ($rowNumber <= 0 || !isset($rowsByRowReal[$rowNumber])) {
+                continue;
+            }
+            foreach (self::MONTHS as $month) {
+                $row['REAL_' . $month] = (float) ($rowsByRowReal[$rowNumber]['REAL_' . $month] ?? 0.0);
+            }
+            $row['REAL_TOTAL'] = (float) ($rowsByRowReal[$rowNumber]['REAL_TOTAL'] ?? $this->sumRealMonths($rowsByRowReal[$rowNumber]));
+        }
+        unset($row);
+    }
+
+    private function sumRealMonths(array $row): float
+    {
+        $total = 0.0;
+        foreach (self::MONTHS as $month) {
+            $total += (float) ($row['REAL_' . $month] ?? 0.0);
+        }
+
+        return $total;
+    }
+
     private function applyRealPercentagesByParent(array &$rows, array $realByCode): void
     {
         foreach ($rows as &$row) {
@@ -652,7 +758,7 @@ class EriService
     {
         $sampleCodes = ['4010101', '4010102', '4010103'];
         foreach ($sampleCodes as $code) {
-            $realEnero = (float) ($importRealByCode[$code]['ENERO'] ?? 0.0);
+            $realEnero = (float) ($importRealByCode[$code]['REAL_ENERO'] ?? 0.0);
             error_log(sprintf(
                 '[ERI][REAL_IMPORT] anio=%d codigo=%s real_enero=%s',
                 $periodo,

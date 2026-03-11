@@ -648,7 +648,8 @@ $eriHeading = $isRealMode
           tdVar.style.width = `${W_NUM}px`;
           tdVar.style.minWidth = `${W_NUM}px`;
           tdVar.style.maxWidth = `${W_NUM}px`;
-          tdVar.textContent = formatNumber(realValue - mes);
+          const presupuestoMes = Number(row[month] || 0);
+          tdVar.textContent = formatNumber(realValue - presupuestoMes);
           tr.appendChild(tdVar);
 
           const tdVarPct = document.createElement('td');
@@ -657,7 +658,7 @@ $eriHeading = $isRealMode
           tdVarPct.style.width = `${W_NUM}px`;
           tdVarPct.style.minWidth = `${W_NUM}px`;
           tdVarPct.style.maxWidth = `${W_NUM}px`;
-          tdVarPct.textContent = formatPct(calcVarPct(realValue, mes));
+          tdVarPct.textContent = formatPct(calcVarPct(realValue, presupuestoMes));
           tr.appendChild(tdVarPct);
         }
 
