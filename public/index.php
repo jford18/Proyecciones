@@ -6,7 +6,9 @@ use App\controllers\AnexoController;
 use App\controllers\DashboardController;
 use App\controllers\ExcelImportController;
 use App\controllers\ImportController;
+use App\controllers\ClientesController;
 use App\db\Db;
+use App\models\Cliente;
 use App\repositories\AnexoRepo;
 use App\repositories\FlujoRepo;
 use App\repositories\ImportLogRepo;
@@ -58,6 +60,7 @@ $excelImportController = new ExcelImportController(
 );
 $anexoController = new AnexoController($anexoRepo);
 $dashboardController = new DashboardController($workflowService);
+$clientesController = new ClientesController(new Cliente($pdo), __DIR__);
 
 $projectOptions = $proyectoRepo->listAll();
 if ($projectOptions === []) {
@@ -176,7 +179,22 @@ try {
         redirectTo((string) ($_POST['back_route'] ?? 'dashboard'), ['tipo' => $activeTipo]);
     }
 
+    if ($route === 'clientes/crear' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        sendJsonResponse($clientesController->crear($_POST, $_FILES));
+    }
+
+    if ($route === 'clientes/editar' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        sendJsonResponse($clientesController->editar((int) ($_POST['id'] ?? 0), $_POST, $_FILES));
+    }
+
+    if ($route === 'clientes/eliminar' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        sendJsonResponse($clientesController->eliminar((int) ($_POST['id'] ?? 0)));
+    }
+
 } catch (Throwable $e) {
+    if (str_starts_with($route, 'clientes/')) {
+        sendJsonResponse(['ok' => false, 'message' => $e->getMessage()], 422);
+    }
     $_SESSION['flash'] = ['type' => 'error', 'text' => $e->getMessage()];
     redirectTo($route === '' ? 'dashboard' : $route, ['tipo' => $activeTipo]);
 }
@@ -210,6 +228,10 @@ switch ($route) {
         $viewData['eriDefaultYear'] = isset($_GET['anio']) ? (int) $_GET['anio'] : (int) date('Y');
         $viewData['eriMode'] = $route === 'eri' ? 'full' : ($route === 'eri_presupuesto' ? 'presupuesto' : 'real');
         $contentView = __DIR__ . '/../src/views/eri.php';
+        break;
+    case 'clientes':
+        $viewData = array_merge($viewData, $clientesController->index());
+        $contentView = __DIR__ . '/../src/views/clientes/index.php';
         break;
     default:
         http_response_code(404);
