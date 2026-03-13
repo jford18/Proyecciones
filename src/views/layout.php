@@ -53,10 +53,10 @@ $sections = [
     </header>
     <div class="container-fluid p-3">
       <?php if ($flash): $map=['success'=>'success','error'=>'danger','info'=>'info']; ?><div class="alert alert-<?= $map[$flash['type']] ?? 'secondary' ?>"><?= htmlspecialchars((string) $flash['text']) ?></div><?php endif; ?>
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
       <?php include $contentView; ?>
     </div>
   </main>
 </div>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -58,7 +58,12 @@
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
 <script>
-  (() => {
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!window.bootstrap?.Modal) {
+      console.error('Bootstrap Modal no está disponible. Verifica la carga de bootstrap.bundle.min.js');
+      return;
+    }
+
     const table = $('#clientesTable').DataTable({
       responsive: true,
       language: {
@@ -194,5 +199,5 @@
       };
       reader.readAsDataURL(file);
     });
-  })();
+  });
 </script>
