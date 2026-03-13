@@ -1,5 +1,6 @@
 <?php
 $months = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+$monthKeys = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 $defaultYear = (int) ($eriDefaultYear ?? date('Y'));
 $eriMode = (string) ($eriMode ?? 'full');
 $isFullMode = $eriMode === 'full';
@@ -37,7 +38,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
         <input id="eri-renta" class="form-control" type="number" min="0" step="0.01" value="25">
       </div>
       <div class="col-md-6 d-flex gap-2 flex-wrap">
-        <button id="eri-recalcular" class="btn btn-primary">Recalcular</button>
+        <button id="btnRecalcular" class="btn btn-primary">Recalcular</button>
         <a id="eri-exportar" class="btn btn-outline-success" href="#" target="_blank" rel="noopener">Exportar Excel</a>
         <button id="eri-comparativo-open" class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#eriComparativoModal">COMPARATIVO</button>
       </div>
@@ -50,9 +51,9 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
           <?php foreach ($months as $monthIndex => $month): ?>
-            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">
-              <div><?= $month ?></div>
-              <div class="eri-month-header-total" data-month-total="<?= $monthIndex + 1 ?>">0</div>
+            <th class="text-center month-header" style="width:90px;min-width:90px;max-width:90px;">
+              <div class="month-title"><?= $month ?></div>
+              <div class="month-total eri-month-header-total" data-month="<?= $monthKeys[$monthIndex] ?>" data-month-total="<?= $monthIndex + 1 ?>">0</div>
             </th>
             <?php if ($isFullMode): ?>
               <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
@@ -178,6 +179,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
 <script>
 (() => {
   const months = <?= json_encode($months, JSON_UNESCAPED_UNICODE) ?>;
+  const monthKeys = <?= json_encode($monthKeys, JSON_UNESCAPED_UNICODE) ?>;
   const eriMode = <?= json_encode($eriMode) ?>;
   const isFullMode = eriMode === 'full';
   const isPresupuestoMode = eriMode === 'presupuesto';
@@ -357,20 +359,21 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
   };
 
   const recalcularTotalesERI = () => {
-    const monthTotals = Array(12).fill(0);
-    tbody.querySelectorAll('tr').forEach((tr) => {
-      if (tr.offsetParent === null) return;
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
-        monthTotals[monthIndex - 1] += getMesCellValue(tr, monthIndex);
+    monthKeys.forEach((monthKey, index) => {
+      let total = 0;
+      const monthIndex = index + 1;
+      tbody.querySelectorAll(`td.ERI_MES[data-month="${monthIndex}"]`).forEach((cell) => {
+        const value = parseNumber(cell.dataset.value ?? cell.textContent ?? 0);
+        total += Number.isFinite(value) ? value : 0;
+      });
+      const headerTotal = document.querySelector(`.month-total[data-month="${monthKey}"]`);
+      if (headerTotal) {
+        headerTotal.textContent = formatNumber(total);
       }
     });
-
-    monthTotals.forEach((total, index) => {
-      const headerTotal = document.querySelector(`.eri-month-header-total[data-month-total="${index + 1}"]`);
-      if (!headerTotal) return;
-      headerTotal.textContent = Number(total || 0).toLocaleString('es-EC', { maximumFractionDigits: 0 });
-    });
   };
+
+  window.addEventListener('load', recalcularTotalesERI);
 
   const recalcRow = (tr) => {
     if (!tr) return;
@@ -626,6 +629,9 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
     rows.forEach((row) => {
       const tr = document.createElement('tr');
       tr.classList.add(`eri-${String(row.TYPE || '').toLowerCase()}`);
+      if (['HEADER', 'SUBTOTAL', 'TOTAL', 'RESULT', 'RESULT_FINAL'].includes(String(row.TYPE || '').toUpperCase())) {
+        tr.classList.add('group-row');
+      }
 
       const tdCode = document.createElement('td');
       tdCode.textContent = row.CODE || '';
@@ -654,8 +660,9 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
         const value = isRealMode
           ? realValue
           : Number(row[month] || 0);
-        tdVal.classList.add('text-end', 'eri-cell-trace', 'ERI_MES');
+        tdVal.classList.add('text-end', 'number', 'eri-cell-trace', 'ERI_MES');
         tdVal.dataset.month = String(mes);
+        tdVal.dataset.col = monthKeys[mes - 1];
         tdVal.dataset.value = String(value ?? 0);
         tdVal.style.width = `${W_NUM}px`;
         tdVal.style.minWidth = `${W_NUM}px`;
@@ -680,7 +687,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
 
         if (isFullMode) {
           const tdReal = document.createElement('td');
-          tdReal.classList.add('text-end');
+          tdReal.classList.add('text-end', 'number');
           tdReal.style.width = `${W_NUM}px`;
           tdReal.style.minWidth = `${W_NUM}px`;
           tdReal.style.maxWidth = `${W_NUM}px`;
@@ -695,6 +702,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
                   data-code="${escapeHtml(codigo)}"
                   data-desc="${escapeHtml(row.DESCRIPCION || '')}"
                   data-mes="${mes}"
+                  data-col="${monthKeys[mes - 1]}"
                   value="${escapeHtml(realValue)}"
                   placeholder="0"
                 >
@@ -708,7 +716,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
 
         if (isFullMode) {
           const tdVar = document.createElement('td');
-          tdVar.classList.add('text-end', 'ERI_VAR');
+          tdVar.classList.add('text-end', 'number', 'ERI_VAR');
           tdVar.dataset.month = String(mes);
           tdVar.style.width = `${W_NUM}px`;
           tdVar.style.minWidth = `${W_NUM}px`;
@@ -718,7 +726,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
           tr.appendChild(tdVar);
 
           const tdVarPct = document.createElement('td');
-          tdVarPct.classList.add('text-end', 'ERI_VAR_PCT');
+          tdVarPct.classList.add('text-end', 'number', 'ERI_VAR_PCT');
           tdVarPct.dataset.month = String(mes);
           tdVarPct.style.width = `${W_NUM}px`;
           tdVarPct.style.minWidth = `${W_NUM}px`;
@@ -731,7 +739,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
           const tdPct = document.createElement('td');
           const pctValue = isFullMode ? Number(row[`REAL_${month}_PCT`] || 0) : Number(row[`${month}_PCT`] || 0);
           tdPct.textContent = fmtPct(pctValue);
-          tdPct.classList.add('text-end');
+          tdPct.classList.add('text-end', 'number');
           tdPct.style.width = `${W_PCT}px`;
           tdPct.style.minWidth = `${W_PCT}px`;
           tdPct.style.maxWidth = `${W_PCT}px`;
@@ -748,17 +756,17 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
 
       const tdTotal = document.createElement('td');
       tdTotal.textContent = fmt(rowTotal);
-      tdTotal.classList.add('text-end', 'eri-sticky-total');
+      tdTotal.classList.add('text-end', 'number', 'eri-sticky-total');
       tr.appendChild(tdTotal);
 
       if (isFullMode) {
         const tdTotVar = document.createElement('td');
-        tdTotVar.classList.add('text-end', 'eri-sticky-total-var', 'ERI_TOT_VAR');
+        tdTotVar.classList.add('text-end', 'number', 'eri-sticky-total-var', 'ERI_TOT_VAR');
         tdTotVar.textContent = formatNumber(rowRealTotal - rowTotal);
         tr.appendChild(tdTotVar);
 
         const tdTotVarPct = document.createElement('td');
-        tdTotVarPct.classList.add('text-end', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
+        tdTotVarPct.classList.add('text-end', 'number', 'eri-sticky-total-var-pct', 'ERI_TOT_VAR_PCT');
         tdTotVarPct.textContent = formatPct(calcVarPct(rowRealTotal, rowTotal));
         tr.appendChild(tdTotVarPct);
       }
@@ -766,7 +774,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
       if (!isRealMode) {
         const tdTotalPct = document.createElement('td');
         tdTotalPct.textContent = fmtPct(rowPct);
-        tdTotalPct.classList.add('text-end', 'eri-sticky-pct');
+        tdTotalPct.classList.add('text-end', 'number', 'eri-sticky-pct');
         tr.appendChild(tdTotalPct);
       }
       tbody.appendChild(tr);
@@ -1140,7 +1148,8 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
   };
 
   if (isFullMode) {
-    document.getElementById('eri-recalcular').addEventListener('click', () => load().catch((e) => alert(e.message)));
+    const recalcBtn = document.getElementById('btnRecalcular') || document.getElementById('eri-recalcular');
+    recalcBtn?.addEventListener('click', () => load().catch((e) => alert(e.message)));
   }
   [partInput, rentaInput].filter(Boolean).forEach((input) => {
     input.addEventListener('input', () => {
