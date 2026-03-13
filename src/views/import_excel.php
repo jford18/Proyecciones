@@ -15,6 +15,14 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 <div class="card shadow-sm">
   <div class="card-body">
     <h4>Importar Excel por pestaña</h4>
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <label class="form-label" for="clienteSelect">Cliente</label>
+        <select id="clienteSelect" class="form-control">
+          <option value="">Seleccione cliente</option>
+        </select>
+      </div>
+    </div>
     <p class="text-muted mb-3">Flujo AJAX: <strong>Validar</strong> y <strong>Importar</strong> consumen endpoints JSON sin recargar la página.</p>
 
     <ul class="nav nav-tabs mb-3">
@@ -123,10 +131,13 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 </div>
 
 <script>
+  let clienteSeleccionado = null;
+
   (function () {
     const tipo = <?= json_encode((string) ($activeTipo ?? 'PRESUPUESTO'), JSON_UNESCAPED_UNICODE) ?>;
     const tab = <?= json_encode((string) ($selectedTemplate['id'] ?? 'ingresos'), JSON_UNESCAPED_UNICODE) ?>;
     const form = document.getElementById('excelImportForm');
+    const clienteSelect = document.getElementById('clienteSelect');
     const fileInput = document.getElementById('excelFile');
     const validateBtn = document.getElementById('validateBtn');
     const executeBtn = document.getElementById('executeBtn');
@@ -153,6 +164,36 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     let allDetails = [];
     let detailsFilter = 'all';
     let detailsLimit = 200;
+
+    function cargarClientes() {
+      if (!clienteSelect) {
+        return;
+      }
+
+      fetch('?r=clientes/list')
+        .then((response) => response.json())
+        .then((data) => {
+          const clientes = Array.isArray(data?.data) ? data.data : [];
+          clientes.forEach((cliente) => {
+            const option = document.createElement('option');
+            option.value = cliente.id;
+            option.textContent = cliente.nombre;
+            clienteSelect.appendChild(option);
+          });
+        })
+        .catch((error) => {
+          console.error('No se pudieron cargar los clientes:', error);
+        });
+    }
+
+    if (clienteSelect) {
+      clienteSelect.addEventListener('change', function () {
+        clienteSeleccionado = this.value || null;
+        console.log('Cliente seleccionado:', clienteSeleccionado);
+      });
+    }
+
+    cargarClientes();
 
     function escapeHtml(text) {
       return String(text ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));

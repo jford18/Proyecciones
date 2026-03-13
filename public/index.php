@@ -179,6 +179,16 @@ try {
         redirectTo((string) ($_POST['back_route'] ?? 'dashboard'), ['tipo' => $activeTipo]);
     }
 
+    if ($route === 'clientes/list' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        $stmt = $pdo->query('SELECT id, nombre_empresa FROM CLIENTES ORDER BY nombre_empresa');
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $data = array_map(static fn (array $row): array => [
+            'id' => (int) ($row['id'] ?? 0),
+            'nombre' => (string) ($row['nombre_empresa'] ?? ''),
+        ], $rows);
+        sendJsonResponse(['data' => $data]);
+    }
+
     if ($route === 'clientes/crear' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         sendJsonResponse($clientesController->crear($_POST, $_FILES));
     }
