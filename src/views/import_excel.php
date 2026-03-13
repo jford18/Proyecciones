@@ -132,6 +132,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
 
 <script>
   let clienteSeleccionado = null;
+  let clienteSeleccionadoNombre = '';
 
   (function () {
     const tipo = <?= json_encode((string) ($activeTipo ?? 'PRESUPUESTO'), JSON_UNESCAPED_UNICODE) ?>;
@@ -189,6 +190,7 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
     if (clienteSelect) {
       clienteSelect.addEventListener('change', function () {
         clienteSeleccionado = this.value || null;
+        clienteSeleccionadoNombre = this.options?.[this.selectedIndex]?.textContent?.trim() || '';
         console.log('Cliente seleccionado:', clienteSeleccionado);
       });
     }
@@ -211,6 +213,12 @@ $initialResult = ($excelExecutionResult && ($excelExecutionResult['template_id']
       fd.append('file', file);
       fd.append('template_id', tab);
       fd.append('tipo', tipo);
+      if (clienteSeleccionado) {
+        fd.append('cliente_id', String(clienteSeleccionado));
+      }
+      if (clienteSeleccionadoNombre && clienteSeleccionadoNombre.toLowerCase() !== 'seleccione cliente') {
+        fd.append('cliente_nombre', clienteSeleccionadoNombre);
+      }
       const persistedJsonPath = (validatedJsonPathInput?.value || lastValidatedJsonPath || '').trim();
       if (persistedJsonPath !== '') {
         fd.append('json_path', persistedJsonPath);

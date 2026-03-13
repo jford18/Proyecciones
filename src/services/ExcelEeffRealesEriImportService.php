@@ -18,15 +18,16 @@ class ExcelEeffRealesEriImportService
     private const SHEET_NAME = 'ERI';
     private const MONTH_KEYS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null)
+    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null, private ?ExcelClientValidationService $clientValidationService = null)
     {
         $this->numberParser ??= new NumberParser();
+        $this->clientValidationService ??= new ExcelClientValidationService();
     }
 
-    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
-        $parsed = $this->parseSheet($fileTmpPath, $originalFileName, $anioRequest);
-        $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $parsed['counts'], $parsed['details']);
+        $parsed = $this->parseSheet($fileTmpPath, $originalFileName, $anioRequest, $clienteSeleccionado ?? '');
+        $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], $parsed['counts'], $parsed['details'], $clienteSeleccionado ?? '');
 
         $warnings = array_values(array_filter(
             $parsed['details'],
@@ -79,7 +80,7 @@ class ExcelEeffRealesEriImportService
         return $response;
     }
 
-    public function executeFromValidatedJson(string $tipo, string $usuario, ?int $anioRequest, ?int $proyectoId = null): array
+    public function executeFromValidatedJson(string $tipo, string $usuario, ?int $anioRequest, ?int $proyectoId = null, ?string $clienteSeleccionado = null): array
     {
         $latest = $this->repository->findLatestImportLogByTabTipo(self::TAB_LOG, $tipo);
         error_log(sprintf(
@@ -106,6 +107,11 @@ class ExcelEeffRealesEriImportService
         $decoded = json_decode((string) file_get_contents($absolutePath), true);
         if (!is_array($decoded)) {
             throw new \RuntimeException('JSON validado corrupto. Debe validar nuevamente.');
+        }
+
+        $clienteValidado = trim((string) ($decoded['cliente_nombre'] ?? ''));
+        if ($clienteSeleccionado !== null && trim($clienteSeleccionado) !== '' && $clienteValidado !== '' && !$this->clientValidationService->validateExcelClientMatch($clienteValidado, $clienteSeleccionado)) {
+            throw new \RuntimeException($this->clientValidationService->buildMismatchMessage($clienteValidado, $clienteSeleccionado));
         }
 
         $rows = is_array($decoded['rows'] ?? null) ? $decoded['rows'] : [];
@@ -158,11 +164,12 @@ class ExcelEeffRealesEriImportService
         return $response;
     }
 
-    private function parseSheet(string $fileTmpPath, ?string $originalFileName, ?int $anioRequest): array
+    private function parseSheet(string $fileTmpPath, ?string $originalFileName, ?int $anioRequest, ?string $clienteSeleccionado = null): array
     {
         $reader = new Xlsx();
         $reader->setReadDataOnly(false);
         $spreadsheet = $reader->load($fileTmpPath);
+        $this->clientValidationService?->assertClientMatchesSpreadsheet($spreadsheet, $clienteSeleccionado ?? '');
 
         $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
         if (!$sheet instanceof Worksheet) {
@@ -391,7 +398,7 @@ class ExcelEeffRealesEriImportService
         return ['raw' => $raw, 'resolved' => $resolved];
     }
 
-    private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, array $counts, array $details): string
+    private function storeJsonEvidence(array $rows, string $tipo, ?int $anio, string $sheetName, string $fileName, array $counts, array $details, string $clienteSeleccionado = ''): string
     {
         $relativePath = 'var/import_store/eeff_reales_eri.json';
         $absolutePath = dirname(__DIR__, 2) . '/' . $relativePath;
@@ -406,6 +413,7 @@ class ExcelEeffRealesEriImportService
             'anio' => $anio,
             'sheet_name' => $sheetName,
             'file_name' => $fileName,
+            'cliente_nombre' => trim($clienteSeleccionado),
             'headers' => ['CODIGO', 'DESCRIPCION', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE', 'TOTAL'],
             'rows' => $rows,
             'counts' => $counts,

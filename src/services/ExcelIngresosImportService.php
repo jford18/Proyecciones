@@ -34,14 +34,15 @@ class ExcelIngresosImportService
         'total' => ['TOTAL'],
     ];
 
-    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null)
+    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null, private ?ExcelClientValidationService $clientValidationService = null)
     {
         $this->numberParser ??= new NumberParser();
+        $this->clientValidationService ??= new ExcelClientValidationService();
     }
 
-    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
-        $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
 
         return [
             'ok' => true,
@@ -56,9 +57,9 @@ class ExcelIngresosImportService
         ];
     }
 
-    public function previewGrid(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function previewGrid(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
-        $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
 
         return [
             'ok' => true,
@@ -90,7 +91,7 @@ class ExcelIngresosImportService
         ];
     }
 
-    public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
         $sheetName = self::SHEET_NAME;
         $fileName = $originalFileName ?: basename($fileTmpPath);
@@ -100,7 +101,7 @@ class ExcelIngresosImportService
         $jsonPath = null;
 
         try {
-            $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName);
+            $parsed = $this->parseIngresos($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
             $rows = $parsed['rows'];
             $details = $parsed['details'];
             $counts = $parsed['counts'];
@@ -157,11 +158,12 @@ class ExcelIngresosImportService
         }
     }
 
-    private function parseIngresos(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null): array
+    private function parseIngresos(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
         $reader = new Xlsx();
         $reader->setReadDataOnly(false);
         $spreadsheet = $reader->load($fileTmpPath);
+        $this->clientValidationService?->assertClientMatchesSpreadsheet($spreadsheet, $clienteSeleccionado ?? '');
         $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
         if (!$sheet instanceof Worksheet) {
             $sheet = $spreadsheet->getSheetCount() > 0 ? $spreadsheet->getSheet(0) : null;
