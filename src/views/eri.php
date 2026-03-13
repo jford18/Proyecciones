@@ -49,8 +49,11 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
         <thead>
         <tr>
           <th>CÓDIGO</th><th>DESCRIPCIÓN</th>
-          <?php foreach ($months as $month): ?>
-            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;"><?= $month ?></th>
+          <?php foreach ($months as $monthIndex => $month): ?>
+            <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">
+              <div><?= $month ?></div>
+              <div class="eri-month-header-total" data-month-total="<?= $monthIndex + 1 ?>">0</div>
+            </th>
             <?php if ($isFullMode): ?>
               <th class="text-center" style="width:90px;min-width:90px;max-width:90px;">REAL</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">VARIACIÓN</th><th class="text-center" style="width:90px;min-width:90px;max-width:90px;">% VARIACIÓN</th><th class="text-center" style="width:48px;min-width:48px;max-width:48px;">%</th>
             <?php elseif ($isPresupuestoMode || $isRealMode): ?>
@@ -229,11 +232,11 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
 
   const fmt = (value) => {
     const rounded = Math.round(Number(value || 0));
-    const abs = Math.abs(rounded).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const abs = Math.abs(rounded).toLocaleString('es-EC', { maximumFractionDigits: 0 });
     return rounded < 0 ? `(${abs})` : abs;
   };
   const fmtPct = (value) => `${Number(value || 0).toFixed(2)}%`;
-  const formatNumber = (value) => Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatNumber = (value) => Number(value || 0).toLocaleString('es-EC', { maximumFractionDigits: 0 });
   const formatPct = (value) => `${Number(value || 0).toFixed(2)}%`;
   const round0 = (value) => Math.round(Number(value || 0));
   const cellKey = (codigo, mes) => `${String(codigo || '').trim()}|${Number(mes || 0)}`;
@@ -353,6 +356,22 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
     return parseNumber(cell.dataset.value ?? cell.textContent ?? '0');
   };
 
+  const recalcularTotalesERI = () => {
+    const monthTotals = Array(12).fill(0);
+    tbody.querySelectorAll('tr').forEach((tr) => {
+      if (tr.offsetParent === null) return;
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
+        monthTotals[monthIndex - 1] += getMesCellValue(tr, monthIndex);
+      }
+    });
+
+    monthTotals.forEach((total, index) => {
+      const headerTotal = document.querySelector(`.eri-month-header-total[data-month-total="${index + 1}"]`);
+      if (!headerTotal) return;
+      headerTotal.textContent = Number(total || 0).toLocaleString('es-EC', { maximumFractionDigits: 0 });
+    });
+  };
+
   const recalcRow = (tr) => {
     if (!tr) return;
     for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
@@ -399,6 +418,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
       recalcRow(tr);
       recalcTotal(tr);
     });
+    recalcularTotalesERI();
   };
 
   const asNegative = (value) => {
@@ -752,7 +772,11 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
       tbody.appendChild(tr);
     });
 
-    if (isFullMode) recalcAllRows();
+    if (isFullMode) {
+      recalcAllRows();
+    } else {
+      recalcularTotalesERI();
+    }
   };
 
   if (isFullMode) {
@@ -762,6 +786,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
     const tr = input.closest('tr');
     recalcRow(tr);
     recalcTotal(tr);
+    recalcularTotalesERI();
   });
 
   tbody.addEventListener('change', (event) => {
@@ -770,6 +795,7 @@ $selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_i
     const tr = input.closest('tr');
     recalcRow(tr);
     recalcTotal(tr);
+    recalcularTotalesERI();
   });
 
   tbody.addEventListener('click', (event) => {
