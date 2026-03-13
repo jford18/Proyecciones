@@ -29,28 +29,13 @@ class ExcelClientValidationService
         }
 
         if (!$this->validateExcelClientMatch($empresaExcel, $clienteSeleccionado)) {
-            throw new \RuntimeException($this->buildMismatchMessage($empresaExcel, $clienteSeleccionado));
+            throw new \RuntimeException("El cliente del Excel no coincide con el cliente seleccionado. Verifique la hoja 'Premisas' celda A1.");
         }
     }
 
     public function validateExcelClientMatch(string $excelEmpresa, string $clienteSeleccionado): bool
     {
         return $this->normalizeName($excelEmpresa) === $this->normalizeName($clienteSeleccionado);
-    }
-
-    public function buildMismatchMessage(string $empresaExcel, string $clienteSeleccionado): string
-    {
-        $empresaExcel = trim($empresaExcel);
-        $clienteSeleccionado = trim($clienteSeleccionado);
-
-        return "El archivo Excel pertenece a una empresa diferente.\n\n"
-            . "Empresa encontrada en el Excel (Hoja \"Premisas\", celda A1):\n"
-            . ($empresaExcel !== '' ? $empresaExcel : '-')
-            . "\n\n"
-            . "Cliente seleccionado en el sistema:\n"
-            . ($clienteSeleccionado !== '' ? $clienteSeleccionado : '-')
-            . "\n\n"
-            . 'Por favor verifique que esté importando el archivo correcto o seleccione el cliente correspondiente antes de continuar.';
     }
 
     private function normalizeName(string $value): string

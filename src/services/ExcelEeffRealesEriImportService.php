@@ -111,7 +111,7 @@ class ExcelEeffRealesEriImportService
 
         $clienteValidado = trim((string) ($decoded['cliente_nombre'] ?? ''));
         if ($clienteSeleccionado !== null && trim($clienteSeleccionado) !== '' && $clienteValidado !== '' && !$this->clientValidationService->validateExcelClientMatch($clienteValidado, $clienteSeleccionado)) {
-            throw new \RuntimeException($this->clientValidationService->buildMismatchMessage($clienteValidado, $clienteSeleccionado));
+            throw new \RuntimeException("El cliente del Excel no coincide con el cliente seleccionado. Verifique la hoja 'Premisas' celda A1.");
         }
 
         $rows = is_array($decoded['rows'] ?? null) ? $decoded['rows'] : [];
