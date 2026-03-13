@@ -69,18 +69,22 @@ function handleEriReal(PDO $pdo): never
 
     if ($op === 'LIST') {
         $anio = filter_input(INPUT_GET, 'anio', FILTER_VALIDATE_INT);
+        $clienteId = filter_input(INPUT_GET, 'cliente_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         $tipo = strtoupper(trim((string) ($_GET['tipo'] ?? 'REAL')));
         if ($anio === false || $anio === null || $anio < 1900 || $anio > 3000) {
             jsonResponse(['ok' => false, 'error' => 'anio es requerido y debe ser válido.'], 422);
+        }
+        if ($clienteId === false || $clienteId === null) {
+            jsonResponse(['ok' => false, 'error' => 'cliente_id es requerido y debe ser válido.'], 422);
         }
 
         $stmt = $pdo->prepare(
             'SELECT CODIGO, ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE
              FROM EEFF_REALES_ERI_IMPORT
-             WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo
+             WHERE ANIO = :anio AND CLIENTE_ID = :cliente_id AND UPPER(COALESCE(TIPO, "")) = :tipo
              ORDER BY CODIGO'
         );
-        $stmt->execute(['anio' => $anio, 'tipo' => $tipo]);
+        $stmt->execute(['anio' => $anio, 'cliente_id' => $clienteId, 'tipo' => $tipo]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $data = [];
@@ -114,6 +118,7 @@ function handleEriReal(PDO $pdo): never
         }
 
         $anio = filter_var($payload['anio'] ?? null, FILTER_VALIDATE_INT);
+        $clienteId = filter_var($payload['cliente_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         $tipo = strtoupper(trim((string) ($payload['tipo'] ?? 'REAL')));
         $mes = filter_var($payload['mes'] ?? null, FILTER_VALIDATE_INT);
         $codigo = trim((string) ($payload['codigo'] ?? ''));
@@ -121,6 +126,9 @@ function handleEriReal(PDO $pdo): never
 
         if ($anio === false || $anio === null || $anio < 1900 || $anio > 3000) {
             jsonResponse(['ok' => false, 'error' => 'anio es requerido y debe ser válido.'], 422);
+        }
+        if ($clienteId === false || $clienteId === null) {
+            jsonResponse(['ok' => false, 'error' => 'cliente_id es requerido y debe ser válido.'], 422);
         }
         if ($codigo === '') {
             jsonResponse(['ok' => false, 'error' => 'codigo es requerido.'], 422);
@@ -141,12 +149,12 @@ function handleEriReal(PDO $pdo): never
             jsonResponse(['ok' => false, 'error' => 'mes debe estar entre 1 y 12.'], 422);
         }
 
-        $checkStmt = $pdo->prepare('SELECT 1 FROM EEFF_REALES_ERI_IMPORT WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo LIMIT 1');
-        $checkStmt->execute(['anio' => $anio, 'tipo' => $tipo, 'codigo' => $codigo]);
+        $checkStmt = $pdo->prepare('SELECT 1 FROM EEFF_REALES_ERI_IMPORT WHERE ANIO = :anio AND CLIENTE_ID = :cliente_id AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo LIMIT 1');
+        $checkStmt->execute(['anio' => $anio, 'cliente_id' => $clienteId, 'tipo' => $tipo, 'codigo' => $codigo]);
         $exists = $checkStmt->fetchColumn() !== false;
 
         if ($exists) {
-            $sql = sprintf('UPDATE EEFF_REALES_ERI_IMPORT SET %s = :valor, TOTAL = COALESCE(ENERO,0)+COALESCE(FEBRERO,0)+COALESCE(MARZO,0)+COALESCE(ABRIL,0)+COALESCE(MAYO,0)+COALESCE(JUNIO,0)+COALESCE(JULIO,0)+COALESCE(AGOSTO,0)+COALESCE(SEPTIEMBRE,0)+COALESCE(OCTUBRE,0)+COALESCE(NOVIEMBRE,0)+COALESCE(DICIEMBRE,0) WHERE ANIO = :anio AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo', $monthColumn);
+            $sql = sprintf('UPDATE EEFF_REALES_ERI_IMPORT SET %s = :valor, TOTAL = COALESCE(ENERO,0)+COALESCE(FEBRERO,0)+COALESCE(MARZO,0)+COALESCE(ABRIL,0)+COALESCE(MAYO,0)+COALESCE(JUNIO,0)+COALESCE(JULIO,0)+COALESCE(AGOSTO,0)+COALESCE(SEPTIEMBRE,0)+COALESCE(OCTUBRE,0)+COALESCE(NOVIEMBRE,0)+COALESCE(DICIEMBRE,0) WHERE ANIO = :anio AND CLIENTE_ID = :cliente_id AND UPPER(COALESCE(TIPO, "")) = :tipo AND CODIGO = :codigo', $monthColumn);
             $stmt = $pdo->prepare($sql);
             if ($valorReal === null) {
                 $stmt->bindValue(':valor', null, PDO::PARAM_NULL);
@@ -154,6 +162,7 @@ function handleEriReal(PDO $pdo): never
                 $stmt->bindValue(':valor', $valorReal);
             }
             $stmt->bindValue(':anio', (int) $anio, PDO::PARAM_INT);
+            $stmt->bindValue(':cliente_id', (int) $clienteId, PDO::PARAM_INT);
             $stmt->bindValue(':tipo', $tipo, PDO::PARAM_STR);
             $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
             $stmt->execute();
@@ -163,16 +172,17 @@ function handleEriReal(PDO $pdo): never
             $insertData[$monthColumn] = $valorReal;
 
             $sql = 'INSERT INTO EEFF_REALES_ERI_IMPORT (
-                        ANIO, TIPO, CODIGO, DESCRIPCION,
+                        ANIO, CLIENTE_ID, TIPO, CODIGO, DESCRIPCION,
                         ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE,
                         TOTAL, ORIGEN_ARCHIVO, ORIGEN_HOJA, ORIGEN_FILA
                     ) VALUES (
-                        :anio, :tipo, :codigo, :descripcion,
+                        :anio, :cliente_id, :tipo, :codigo, :descripcion,
                         :ENERO, :FEBRERO, :MARZO, :ABRIL, :MAYO, :JUNIO, :JULIO, :AGOSTO, :SEPTIEMBRE, :OCTUBRE, :NOVIEMBRE, :DICIEMBRE,
                         :total, :origen_archivo, :origen_hoja, :origen_fila
                     )';
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(':anio', (int) $anio, PDO::PARAM_INT);
+            $stmt->bindValue(':cliente_id', (int) $clienteId, PDO::PARAM_INT);
             $stmt->bindValue(':tipo', $tipo, PDO::PARAM_STR);
             $stmt->bindValue(':codigo', $codigo, PDO::PARAM_STR);
             $stmt->bindValue(':descripcion', $descripcion, PDO::PARAM_STR);
@@ -289,11 +299,12 @@ $anio = (int) ($_GET['anio'] ?? date('Y'));
 $codigo = trim((string) ($_GET['codigo'] ?? ''));
 $mes = (int) ($_GET['mes'] ?? 0);
 $tipo = strtoupper(trim((string) ($_GET['tipo'] ?? 'PRESUPUESTO')));
+$clienteId = filter_var($_GET['cliente_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 
-if ($codigo === '' || $mes < 1 || $mes > 12) {
+if ($codigo === '' || $mes < 1 || $mes > 12 || $clienteId === null) {
     http_response_code(422);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok' => false, 'message' => 'Parámetros inválidos: anio, codigo y mes son obligatorios.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'message' => 'Parámetros inválidos: anio, codigo, mes y cliente_id son obligatorios.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -311,8 +322,8 @@ $mesCol = monthColumn($mes);
 $mesNombre = monthName($mes);
 
 try {
-    $stmt = $pdo->prepare("SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS NOMBRE_CUENTA, {$mesCol} AS MES_VALOR FROM {$meta['table']} WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO = :codigo LIMIT 1");
-    $stmt->execute(['tipo' => $tipo, 'anio' => $anio, 'codigo' => $codigo]);
+    $stmt = $pdo->prepare("SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS NOMBRE_CUENTA, {$mesCol} AS MES_VALOR FROM {$meta['table']} WHERE TIPO = :tipo AND ANIO = :anio AND CLIENTE_ID = :cliente_id AND CODIGO = :codigo LIMIT 1");
+    $stmt->execute(['tipo' => $tipo, 'anio' => $anio, 'cliente_id' => $clienteId, 'codigo' => $codigo]);
     $direct = $stmt->fetch(PDO::FETCH_ASSOC);
 
     $latestImport = findLatestImportLog($pdo, (string) $meta['id'], $tipo);
@@ -325,8 +336,8 @@ try {
     $valorEri = $valorOriginal * (int) $meta['sign'];
 
     if ($direct === false) {
-        $childStmt = $pdo->prepare("SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS NOMBRE_CUENTA, {$mesCol} AS MES_VALOR FROM {$meta['table']} WHERE TIPO = :tipo AND ANIO = :anio AND CODIGO LIKE :prefijo ORDER BY CODIGO");
-        $childStmt->execute(['tipo' => $tipo, 'anio' => $anio, 'prefijo' => $codigo . '%']);
+        $childStmt = $pdo->prepare("SELECT CODIGO, COALESCE(NOMBRE_CUENTA, '') AS NOMBRE_CUENTA, {$mesCol} AS MES_VALOR FROM {$meta['table']} WHERE TIPO = :tipo AND ANIO = :anio AND CLIENTE_ID = :cliente_id AND CODIGO LIKE :prefijo ORDER BY CODIGO");
+        $childStmt->execute(['tipo' => $tipo, 'anio' => $anio, 'cliente_id' => $clienteId, 'prefijo' => $codigo . '%']);
         $children = $childStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $components = [];
@@ -358,6 +369,7 @@ try {
     $response = [
         'ok' => true,
         'anio' => $anio,
+        'cliente_id' => $clienteId,
         'codigo' => $codigo,
         'mes' => $mes,
         'valor_eri' => $valorEri,

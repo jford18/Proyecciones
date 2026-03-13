@@ -25,6 +25,7 @@ try {
 
     $periodo = (int) ($_GET['periodo'] ?? date('Y'));
     $tipo = strtoupper(trim((string) ($_GET['tipo'] ?? 'PRESUPUESTO')));
+    $clienteId = filter_var($_GET['cliente_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 
     if ($periodo < 1900 || $periodo > 3000) {
         throw new InvalidArgumentException('El período es inválido.');
@@ -34,8 +35,13 @@ try {
         $tipo = 'PRESUPUESTO';
     }
 
-    $payload = $service->buildResultadoAntesDesglose($periodo);
+    if ($clienteId === null) {
+        throw new InvalidArgumentException('Seleccione un cliente para visualizar la información.');
+    }
+
+    $payload = $service->buildResultadoAntesDesglose($periodo, $clienteId);
     $payload['tipo'] = $tipo;
+    $payload['cliente_id'] = $clienteId;
 
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

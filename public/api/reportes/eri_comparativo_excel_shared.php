@@ -195,12 +195,12 @@ function eriComparativoReadExcelRows(string $filePath): array
     return $rows;
 }
 
-function eriComparativoGetSistemaRows(int $anio, string $tipo): array
+function eriComparativoGetSistemaRows(int $anio, string $tipo, int $clienteId): array
 {
     $config = require __DIR__ . '/../../../src/config/config.php';
     $pdo = Db::pdo($config);
     $service = new EriService($pdo);
-    $payload = $service->build($anio, 0.15, 0.25, $tipo);
+    $payload = $service->build($anio, 0.15, 0.25, $tipo, $clienteId);
     $sourceRows = (array) ($payload['rows'] ?? []);
 
     $rows = [];
@@ -284,11 +284,15 @@ function eriComparativoBuildRows(array $excelRows, array $sistemaRows, bool $sol
 function eriComparativoBuildResult(array $params, string $filePath): array
 {
     $anio = (int) ($params['anio'] ?? date('Y'));
+    $clienteId = (int) ($params['cliente_id'] ?? 0);
     $tipo = strtoupper(trim((string) ($params['tipo'] ?? 'PRESUPUESTO')));
     $soloDiferencias = ((int) ($params['solo_diferencias'] ?? 0)) === 1;
+    if ($clienteId <= 0) {
+        throw new InvalidArgumentException('Seleccione un cliente para visualizar la información.');
+    }
 
     $excelRows = eriComparativoReadExcelRows($filePath);
-    $sistemaRows = eriComparativoGetSistemaRows($anio, $tipo);
+    $sistemaRows = eriComparativoGetSistemaRows($anio, $tipo, $clienteId);
     $rows = eriComparativoBuildRows($excelRows, $sistemaRows, $soloDiferencias);
 
     return [
