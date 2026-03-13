@@ -8,10 +8,20 @@ $isRealMode = $eriMode === 'real';
 $eriHeading = $isRealMode
     ? '📊 ERI REAL'
     : ($isPresupuestoMode ? '📊 ERI PRESUPUESTO' : '📊 ERI – Estado de Resultados Integral (Presupuesto vs Real)');
+$selectedClienteId = isset($_GET['cliente_id']) ? trim((string) $_GET['cliente_id']) : '';
 ?>
 <div class="card">
   <div class="card-body">
     <h5 class="mb-3"><?= $eriHeading ?></h5>
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Cliente</label>
+        <select id="clienteSelect" class="form-control" data-selected="<?= htmlspecialchars($selectedClienteId, ENT_QUOTES, 'UTF-8') ?>">
+          <option value="">Seleccione cliente</option>
+        </select>
+      </div>
+    </div>
+    <div id="eri-cliente-alert" class="mb-3"></div>
     <div class="row g-2 align-items-end mb-3">
       <div class="col-md-2">
         <label class="form-label">Año/Periodo</label>
@@ -170,6 +180,8 @@ $eriHeading = $isRealMode
   const isPresupuestoMode = eriMode === 'presupuesto';
   const isRealMode = eriMode === 'real';
   const tbody = document.getElementById('eri-tbody');
+  const clienteSelect = document.getElementById('clienteSelect');
+  const clienteAlert = document.getElementById('eri-cliente-alert');
   const yearInput = document.getElementById('eri-anio');
   const partInput = document.getElementById('eri-participacion');
   const rentaInput = document.getElementById('eri-renta');
@@ -206,6 +218,14 @@ $eriHeading = $isRealMode
   let currentExcelTmpFile = '';
   const W_NUM = 90;
   const W_PCT = 48;
+  const getClienteId = () => {
+    const raw = (clienteSelect && clienteSelect.value ? clienteSelect.value : '').trim();
+    return raw === '' ? null : Number(raw);
+  };
+  const hasClienteSelected = () => {
+    const clienteId = getClienteId();
+    return Number.isInteger(clienteId) && clienteId > 0;
+  };
 
   const fmt = (value) => {
     const rounded = Math.round(Number(value || 0));
@@ -218,6 +238,14 @@ $eriHeading = $isRealMode
   const round0 = (value) => Math.round(Number(value || 0));
   const cellKey = (codigo, mes) => `${String(codigo || '').trim()}|${Number(mes || 0)}`;
   const ES_DETALLE = (CODIGO) => CODIGO && CODIGO.toString().trim().length >= 7;
+  const showClienteAlert = (message) => {
+    if (!clienteAlert) return;
+    clienteAlert.innerHTML = `<div class="alert alert-info py-2 mb-0">${escapeHtml(message)}</div>`;
+  };
+  const clearClienteAlert = () => {
+    if (!clienteAlert) return;
+    clienteAlert.innerHTML = '';
+  };
 
   const setCellStatus = (codigo, mes, status) => {
     const key = cellKey(codigo, mes);
@@ -232,6 +260,10 @@ $eriHeading = $isRealMode
   };
 
   const saveRealValue = async ({ codigo, descripcion, mes, valorReal }) => {
+    const clienteId = getClienteId();
+    if (!clienteId) {
+      throw new Error('Seleccione un cliente para visualizar la información.');
+    }
     const key = cellKey(codigo, mes);
     setCellStatus(codigo, mes, 'saving');
     try {
@@ -240,6 +272,7 @@ $eriHeading = $isRealMode
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
           anio: Number(yearInput.value || new Date().getFullYear()),
+          cliente_id: clienteId,
           tipo: (new URLSearchParams(window.location.search).get('tipo') || 'REAL').toUpperCase(),
           codigo,
           descripcion,
@@ -440,8 +473,12 @@ $eriHeading = $isRealMode
   };
 
   const buildUrl = (format = 'json') => {
+    if (!hasClienteSelected()) {
+      return null;
+    }
+    const clienteId = getClienteId();
     const tipoReal = (new URLSearchParams(window.location.search).get('tipo') || 'REAL').toUpperCase();
-    return `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number((rentaInput && rentaInput.value) || 25) / 100).toString())}&tipo_real=${encodeURIComponent(tipoReal)}&format=${format}`;
+    return `api/eri/get_eri.php?periodo=${encodeURIComponent(yearInput.value || new Date().getFullYear())}&tasa_part=${encodeURIComponent((Number(partInput.value || 15) / 100).toString())}&tasa_renta=${encodeURIComponent((Number((rentaInput && rentaInput.value) || 25) / 100).toString())}&tipo_real=${encodeURIComponent(tipoReal)}&cliente_id=${encodeURIComponent(String(clienteId))}&format=${format}`;
   };
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
@@ -458,10 +495,14 @@ $eriHeading = $isRealMode
   const openTrace = async (codigo, descripcion, monthIndex, valorEri) => {
     const anio = Number(yearInput.value || new Date().getFullYear());
     const tipo = new URLSearchParams(window.location.search).get('tipo') || 'PRESUPUESTO';
+    const clienteId = getClienteId();
+    if (!clienteId) {
+      throw new Error('Seleccione un cliente para visualizar la información.');
+    }
     drawerBody.innerHTML = '<div class="text-muted">Cargando trazabilidad...</div>';
     drawer.show();
 
-    const url = `api/eri/origen.php?anio=${encodeURIComponent(anio)}&codigo=${encodeURIComponent(codigo)}&mes=${encodeURIComponent(monthIndex)}&tipo=${encodeURIComponent(tipo)}`;
+    const url = `api/eri/origen.php?anio=${encodeURIComponent(anio)}&codigo=${encodeURIComponent(codigo)}&mes=${encodeURIComponent(monthIndex)}&tipo=${encodeURIComponent(tipo)}&cliente_id=${encodeURIComponent(String(clienteId))}`;
     const response = await fetch(url);
     const data = await response.json();
     if (!response.ok || !data.ok) {
@@ -502,11 +543,15 @@ $eriHeading = $isRealMode
   const openDesgloseResultadoAntes = async () => {
     const periodo = Number(yearInput.value || new Date().getFullYear());
     const tipo = new URLSearchParams(window.location.search).get('tipo') || 'PRESUPUESTO';
+    const clienteId = getClienteId();
+    if (!clienteId) {
+      throw new Error('Seleccione un cliente para visualizar la información.');
+    }
     desgloseAlert.innerHTML = '<div class="text-muted">Cargando desglose...</div>';
     desgloseTableBody.innerHTML = '';
     desgloseModal.show();
 
-    const url = `/api/eri/desglose.php?periodo=${encodeURIComponent(periodo)}&tipo=${encodeURIComponent(tipo)}`;
+    const url = `/api/eri/desglose.php?periodo=${encodeURIComponent(periodo)}&tipo=${encodeURIComponent(tipo)}&cliente_id=${encodeURIComponent(String(clienteId))}`;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await response.json();
     if (!response.ok || !data?.ok) {
@@ -837,7 +882,7 @@ $eriHeading = $isRealMode
     if (compViewFile) {
       compViewFile.classList.add('disabled');
       if (currentExcelTmpFile) {
-        compViewFile.href = `/api/reportes/eri_comparativo_excel_export.php?file_tmp=${encodeURIComponent(currentExcelTmpFile)}&anio=${encodeURIComponent(yearInput.value || '')}&tipo=PRESUPUESTO&solo_diferencias=0`;
+        compViewFile.href = `/api/reportes/eri_comparativo_excel_export.php?file_tmp=${encodeURIComponent(currentExcelTmpFile)}&anio=${encodeURIComponent(yearInput.value || '')}&tipo=PRESUPUESTO&solo_diferencias=0&cliente_id=${encodeURIComponent(String(getClienteId() || ''))}`;
         compViewFile.classList.remove('disabled');
       }
     }
@@ -898,6 +943,7 @@ $eriHeading = $isRealMode
       anio: String(yearInput?.value || ''),
       tipo: String(currentMeta.tipo || 'PRESUPUESTO'),
       file_tmp: currentExcelTmpFile,
+      cliente_id: String(getClienteId() || ''),
     });
 
     const exportEndpoint = modo === 'excel_vs_sistema'
@@ -961,6 +1007,10 @@ $eriHeading = $isRealMode
     const tipoB = String(compTipoB.value || 'PRESUPUESTO').trim().toUpperCase();
     const onlyDiff = compOnlyDiff.checked ? '1' : '0';
     const modo = String(compModo?.value || 'import_vs_import');
+    const clienteId = getClienteId();
+    if (!clienteId) {
+      throw new Error('Seleccione un cliente para visualizar la información.');
+    }
 
     if (modo === 'excel_vs_sistema') {
       const file = compFileInput?.files?.[0] || null;
@@ -973,6 +1023,7 @@ $eriHeading = $isRealMode
       formData.append('solo_diferencias', onlyDiff);
       formData.append('anio', String(yearInput?.value || ''));
       formData.append('tipo', tipoB || 'PRESUPUESTO');
+      formData.append('cliente_id', String(clienteId));
 
       const response = await fetch('/api/reportes/eri_comparativo_excel.php', {
         method: 'POST',
@@ -1018,7 +1069,16 @@ $eriHeading = $isRealMode
   };
 
   const load = async () => {
-    const response = await fetch(buildUrl('json'));
+    const url = buildUrl('json');
+    if (!url) {
+      tbody.innerHTML = '';
+      clearClienteAlert();
+      showClienteAlert('Seleccione un cliente para visualizar la información.');
+      if (exportLink) exportLink.href = '#';
+      return;
+    }
+    clearClienteAlert();
+    const response = await fetch(url);
     const data = await response.json();
     if (!response.ok || !(data.success || data.SUCCESS)) {
       throw new Error(data.message || data.MESSAGE || 'No fue posible calcular ERI.');
@@ -1028,7 +1088,29 @@ $eriHeading = $isRealMode
       renta: rentaInput ? rentaInput.value : 25,
     });
     renderRows(currentRows);
-    if (exportLink) exportLink.href = buildUrl('xlsx');
+    if (exportLink) {
+      const exportUrl = buildUrl('xlsx');
+      exportLink.href = exportUrl || '#';
+    }
+  };
+
+  const loadClientes = async () => {
+    if (!clienteSelect) return;
+    const selectedFromData = (clienteSelect.dataset.selected || '').trim();
+    const response = await fetch('?r=clientes/list');
+    const payload = await response.json();
+    const clientes = Array.isArray(payload?.data) ? payload.data : [];
+
+    clientes.forEach((cliente) => {
+      const option = document.createElement('option');
+      option.value = String(cliente.id || '');
+      option.textContent = String(cliente.nombre || '');
+      clienteSelect.appendChild(option);
+    });
+
+    if (selectedFromData !== '') {
+      clienteSelect.value = selectedFromData;
+    }
   };
 
   if (isFullMode) {
@@ -1072,6 +1154,20 @@ $eriHeading = $isRealMode
   if (isFullMode) {
     updateModoUi();
   }
-  load().catch((e) => alert(e.message));
+  if (clienteSelect) {
+    clienteSelect.addEventListener('change', function onClienteChange() {
+      const url = new URL(window.location.href);
+      if (this.value) {
+        url.searchParams.set('cliente_id', this.value);
+      } else {
+        url.searchParams.delete('cliente_id');
+      }
+      window.location.href = url.toString();
+    });
+  }
+
+  loadClientes()
+    .then(() => load())
+    .catch((e) => alert(e.message));
 })();
 </script>

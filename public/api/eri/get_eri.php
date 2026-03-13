@@ -19,10 +19,11 @@ $tasaPart = (float) ($_REQUEST['tasa_part'] ?? $_REQUEST['TASA_PARTICIPACION'] ?
 $tasaRenta = (float) ($_REQUEST['tasa_renta'] ?? $_REQUEST['TASA_RENTA'] ?? 0.25);
 $format = (string) ($_REQUEST['format'] ?? 'json');
 $tipoReal = (string) ($_REQUEST['tipo_real'] ?? $_REQUEST['tipo'] ?? 'REAL');
+$clienteId = filter_var($_REQUEST['cliente_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: null;
 $months = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 
 try {
-    $payload = $service->build($periodo, $tasaPart, $tasaRenta, $tipoReal);
+    $payload = $service->build($periodo, $tasaPart, $tasaRenta, $tipoReal, $clienteId);
 
     if ($format === 'xlsx') {
         $spreadsheet = new Spreadsheet();

@@ -18,13 +18,16 @@ class EriService
 
     public function __construct(private PDO $pdo) {}
 
-    public function build(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25, string $tipoReal = 'REAL'): array
+    public function build(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25, string $tipoReal = 'REAL', ?int $clienteId = null): array
     {
+        if ($clienteId === null || $clienteId <= 0) {
+            throw new \InvalidArgumentException('Seleccione un cliente para visualizar la información.');
+        }
         $template = $this->buildTemplate();
         usort($template, fn(array $a, array $b) => (int) $a['ROW'] <=> (int) $b['ROW']);
 
-        ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template);
-        $realByCode = $this->loadImportedReals($periodo, $tipoReal);
+        ['values' => $detailByCode, 'descriptions' => $descByCode] = $this->loadDetails($periodo, $template, $clienteId);
+        $realByCode = $this->loadImportedReals($periodo, $tipoReal, $clienteId);
         $rows = [];
         $rowsByCode = [];
         $rowsByRow = [];
@@ -40,7 +43,7 @@ class EriService
             } elseif ($type === 'SUBTOTAL' && $normalizedCode !== '') {
                 $values = $this->subtotalFromDetails($normalizedCode, $detailByCode);
             } elseif ($type === 'TOTAL' && $normalizedCode !== '') {
-                $values = $this->resolveTotal($normalizedCode, (string) ($meta['SOURCE_TABLE'] ?? ''), $periodo, (int) ($meta['SIGN'] ?? 1), $detailByCode);
+                $values = $this->resolveTotal($normalizedCode, (string) ($meta['SOURCE_TABLE'] ?? ''), $periodo, (int) ($meta['SIGN'] ?? 1), $detailByCode, $clienteId);
             }
 
             $rowDesc = (string) $meta['DESCRIPCION'];
@@ -131,14 +134,14 @@ class EriService
         $this->applyRealPercentagesByParent($rows, $realByCode);
 
         $this->logRealSampleDebug($periodo, $realByCode);
-        error_log(sprintf('[ERI][REAL] anio=%d tipo=%s rows=%d match_real=%d', $periodo, strtoupper(trim($tipoReal)), count($rows), $matchedRealRows));
+        error_log(sprintf('[ERI][REAL] anio=%d cliente_id=%d tipo=%s rows=%d match_real=%d', $periodo, $clienteId, strtoupper(trim($tipoReal)), count($rows), $matchedRealRows));
 
         return ['success' => true, 'periodo' => $periodo, 'tasa_part' => $tasaPart, 'tasa_renta' => $tasaRenta, 'rows' => $rows, 'SUCCESS' => true, 'ROWS' => $rows];
     }
 
-    public function buildResultadoAntesDesglose(int $periodo, float $tasaPart = 0.15, float $tasaRenta = 0.25): array
+    public function buildResultadoAntesDesglose(int $periodo, int $clienteId, float $tasaPart = 0.15, float $tasaRenta = 0.25): array
     {
-        $payload = $this->build($periodo, $tasaPart, $tasaRenta);
+        $payload = $this->build($periodo, $tasaPart, $tasaRenta, 'REAL', $clienteId);
         $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
         $rowsByRow = [];
         foreach ($rows as $row) {
@@ -248,7 +251,7 @@ class EriService
         $rows[] = ['ROW' => $row, 'CODE' => $subtotalCode, 'DESCRIPCION' => $subtotalDesc, 'TYPE' => 'SUBTOTAL', 'SOURCE_TABLE' => $sourceTable, 'SIGN' => $sign];
     }
 
-    private function loadDetails(int $periodo, array $template): array
+    private function loadDetails(int $periodo, array $template, int $clienteId): array
     {
         $byTableCodes = [];
         $signByCode = [];
@@ -272,7 +275,7 @@ class EriService
         $detail = [];
         $descByCode = [];
         foreach ($byTableCodes as $table => $codes) {
-            $data = $this->queryDetailTable($table, $periodo, array_values(array_unique($codes)));
+            $data = $this->queryDetailTable($table, $periodo, array_values(array_unique($codes)), $clienteId);
             foreach ($data as $code => $dataRow) {
                 $values = $this->zeroMonths();
                 $sign = $signByCode[$code] ?? 1;
@@ -290,7 +293,7 @@ class EriService
         return ['values' => $detail, 'descriptions' => $descByCode];
     }
 
-    private function queryDetailTable(string $table, int $periodo, array $codes): array
+    private function queryDetailTable(string $table, int $periodo, array $codes, int $clienteId): array
     {
         if ($codes === []) {
             return [];
@@ -299,9 +302,9 @@ class EriService
         $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(A.' . self::MONTH_TO_DB[$m] . ', 0) AS ' . $m, self::MONTHS));
         $sql = "SELECT TRIM(CAST(A.CODIGO AS CHAR)) AS CODIGO, COALESCE(A.NOMBRE_CUENTA, '') AS DESCRIPCION, {$monthSelect}\n"
             . "FROM {$table} A\n"
-            . "WHERE A.ANIO = ? AND TRIM(CAST(A.CODIGO AS CHAR)) IN ({$placeholders})";
+            . "WHERE A.ANIO = ? AND A.CLIENTE_ID = ? AND TRIM(CAST(A.CODIGO AS CHAR)) IN ({$placeholders})";
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute(array_merge([$periodo], $codes));
+        $stmt->execute(array_merge([$periodo, $clienteId], $codes));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $out = [];
         foreach ($rows as $row) {
@@ -318,14 +321,14 @@ class EriService
         return $out;
     }
 
-    private function loadImportedReals(int $periodo, string $tipoReal): array
+    private function loadImportedReals(int $periodo, string $tipoReal, int $clienteId): array
     {
         $sql = 'SELECT ANIO, CODIGO, ENERO, FEBRERO, MARZO, ABRIL, MAYO, JUNIO, JULIO, AGOSTO, SEPTIEMBRE, OCTUBRE, NOVIEMBRE, DICIEMBRE, TOTAL '
             . 'FROM eeff_reales_eri_import '
-            . 'WHERE ANIO = ?';
+            . 'WHERE ANIO = ? AND CLIENTE_ID = ?';
 
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([$periodo]);
+        $stmt->execute([$periodo, $clienteId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $out = [];
@@ -376,7 +379,7 @@ class EriService
         return $sum;
     }
 
-    private function resolveTotal(string $code, string $sourceTable, int $periodo, int $sign, array $detailByCode): array
+    private function resolveTotal(string $code, string $sourceTable, int $periodo, int $sign, array $detailByCode, int $clienteId): array
     {
         $sum = $this->zeroMonths();
         foreach ($detailByCode as $detailCode => $values) {
@@ -397,7 +400,7 @@ class EriService
             return $sum;
         }
 
-        $fallback = $this->queryTotalFallbackFromSource($sourceTable, $periodo, $code);
+        $fallback = $this->queryTotalFallbackFromSource($sourceTable, $periodo, $code, $clienteId);
         if (!$this->hasAnyMonthValue($fallback)) {
             return $sum;
         }
@@ -409,14 +412,14 @@ class EriService
         return $fallback;
     }
 
-    private function queryTotalFallbackFromSource(string $table, int $periodo, string $code): array
+    private function queryTotalFallbackFromSource(string $table, int $periodo, string $code, int $clienteId): array
     {
         $sum = $this->zeroMonths();
         $monthSelect = implode(', ', array_map(fn($m) => 'COALESCE(SUM(COALESCE(' . self::MONTH_TO_DB[$m] . ', 0)), 0) AS ' . $m, self::MONTHS));
 
-        $sqlLeaf = "SELECT {$monthSelect}, COUNT(*) AS CNT FROM {$table} WHERE ANIO = ? AND CODIGO LIKE ? AND CHAR_LENGTH(CODIGO) = 7";
+        $sqlLeaf = "SELECT {$monthSelect}, COUNT(*) AS CNT FROM {$table} WHERE ANIO = ? AND CLIENTE_ID = ? AND CODIGO LIKE ? AND CHAR_LENGTH(CODIGO) = 7";
         $stmtLeaf = $this->pdo->prepare($sqlLeaf);
-        $stmtLeaf->execute([$periodo, $code . '%']);
+        $stmtLeaf->execute([$periodo, $clienteId, $code . '%']);
         $leaf = $stmtLeaf->fetch(PDO::FETCH_ASSOC) ?: [];
 
         if (((int) ($leaf['CNT'] ?? 0)) > 0) {
@@ -426,9 +429,9 @@ class EriService
             return $sum;
         }
 
-        $sqlTotal = "SELECT {$monthSelect} FROM {$table} WHERE ANIO = ? AND CODIGO = ?";
+        $sqlTotal = "SELECT {$monthSelect} FROM {$table} WHERE ANIO = ? AND CLIENTE_ID = ? AND CODIGO = ?";
         $stmtTotal = $this->pdo->prepare($sqlTotal);
-        $stmtTotal->execute([$periodo, $code]);
+        $stmtTotal->execute([$periodo, $clienteId, $code]);
         $total = $stmtTotal->fetch(PDO::FETCH_ASSOC) ?: [];
 
         foreach (self::MONTHS as $month) {
