@@ -11,6 +11,18 @@ body { background: #f3f6fb; }
 
 .eri-table td, .eri-table th { font-size: 0.8rem; white-space: nowrap; }
 .eri-table thead th { background: #0f172a; color: #fff; font-weight: 700; }
+
+.eri-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.eri-table thead th { text-align: center; }
+.eri-table .month-header { vertical-align: middle; }
+.eri-table .month-title { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+.eri-table .month-total { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+.eri-table td.number { text-align: right; }
+.eri-table .group-row td { background: #1e293b; font-weight: 600; color: #fff; }
 .eri-table .eri-header td { font-weight: 700; background: #1f2937; color: #fff; }
 .eri-table .eri-subtotal td, .eri-table .eri-total td { font-weight: 700; background: #eef2f7; }
 .eri-table .eri-result td { font-weight: 800; background: #f8fafc; }
