@@ -36,14 +36,15 @@ class ExcelProduccionImportService
         'total' => ['TOTAL'],
     ];
 
-    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null)
+    public function __construct(private PresupuestoIngresosRepository $repository, private ?NumberParser $numberParser = null, private ?ExcelClientValidationService $clientValidationService = null)
     {
         $this->numberParser ??= new NumberParser();
+        $this->clientValidationService ??= new ExcelClientValidationService();
     }
 
-    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function validate(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
-        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
         $jsonPath = $this->storeJsonEvidence($parsed['rows'], $tipo, $parsed['anio'], $parsed['sheet_name'], $parsed['file_name'], 'validate', $parsed['counts'], $parsed['details']);
 
         return [
@@ -68,9 +69,9 @@ class ExcelProduccionImportService
         ];
     }
 
-    public function previewGrid(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function previewGrid(string $fileTmpPath, string $tipo, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
-        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+        $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
 
         return [
             'ok' => true,
@@ -102,7 +103,7 @@ class ExcelProduccionImportService
         ];
     }
 
-    public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null): array
+    public function execute(string $fileTmpPath, string $tipo, string $usuario, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
         $tipo = strtoupper(trim($tipo));
         if (!in_array($tipo, ['PRESUPUESTO', 'REAL'], true)) {
@@ -118,7 +119,7 @@ class ExcelProduccionImportService
         ];
 
         try {
-            $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName);
+            $parsed = $this->parseProduccion($fileTmpPath, $anioRequest, $originalFileName, $clienteSeleccionado ?? '');
             $debug['sheet_name'] = (string) ($parsed['sheet_name'] ?? '');
             $debug['file_name'] = (string) ($parsed['file_name'] ?? $debug['file_name']);
             if (trim((string) ($parsed['sheet_name'] ?? '')) === '') {
@@ -167,11 +168,12 @@ class ExcelProduccionImportService
         }
     }
 
-    private function parseProduccion(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null): array
+    private function parseProduccion(string $fileTmpPath, ?int $anioRequest = null, ?string $originalFileName = null, ?string $clienteSeleccionado = null): array
     {
         $reader = new Xlsx();
         $reader->setReadDataOnly(false);
         $spreadsheet = $reader->load($fileTmpPath);
+        $this->clientValidationService?->assertClientMatchesSpreadsheet($spreadsheet, $clienteSeleccionado ?? '');
 
         $sheet = $this->resolveSheet($spreadsheet);
         $highestRow = (int) $sheet->getHighestRow();
