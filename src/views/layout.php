@@ -9,6 +9,7 @@ $pageTitles = [
     'eri' => 'ERI – Estado de Resultados Integral (Presupuesto vs Real)',
     'eri_presupuesto' => 'ERI Presupuesto',
     'eri_real' => 'ERI Real',
+    'clientes' => 'Mantenimiento de Clientes',
 ];
 $pageTitle = $pageTitles[$route] ?? 'Proyecciones';
 
@@ -20,6 +21,7 @@ $sections = [
         'import-excel' => ['Importar Excel (7 pestañas)', 'bi-file-earmark-spreadsheet'],
     ]],
     ['title' => 'Reportes', 'items' => ['eri' => [$eriFullTitle, 'bi-bar-chart-line'], 'eri_presupuesto' => ['ERI Presupuesto', 'bi-bar-chart-steps'], 'eri_real' => ['ERI Real', 'bi-bar-chart']]],
+    ['title' => 'Mantenimiento', 'items' => ['clientes' => ['Clientes', 'bi-people']]],
 ];
 ?>
 <!doctype html>
